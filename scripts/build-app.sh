@@ -26,6 +26,9 @@ render "$root/art/tiles" "$tmp/tiles" --split --scale 1
 render "$root/art/overlays" "$tmp/overlays" --scale 1
 cp "$tmp"/tiles/*_mask.png "$tmp"/tiles/*_detail.png "$app/Contents/Resources/sprites/"
 for f in "$tmp"/overlays/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f" "$app/Contents/Resources/sprites/"; done
+# Unread mark (top-left sparkle on "just finished, not seen yet" avatars).
+render "$root/art/marks" "$tmp/marks" --scale 1
+for f in "$tmp"/marks/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f" "$app/Contents/Resources/sprites/"; done
 # Menu bar icon (template silhouette) and app icon (.icns from the 32x32 fairy at every size).
 render "$root/art/icon/menu" "$tmp/menu" --scale 1
 cp "$tmp/menu/fairy_menu.png" "$app/Contents/Resources/sprites/"

@@ -100,4 +100,26 @@ P = {**K, "g": "#9a9a9a", "y": "#ffd23f"}
 write("unplugged", "grey plug with a yellow lightning bolt: host offline", P, plug, auto=True)
 write("unplugged_b", "grey plug, bolt off (blink frame)", {**K, "g": "#9a9a9a"},
       [r.replace("y", "g") for r in plug], auto=True)
+# --- unread mark (top-left of "just finished, not seen yet" avatars): 5x5 sparkle, two frames ---
+def write_mark(name, desc, rows):
+    assert len(rows) == 5 and all(len(r) == 5 for r in rows), name
+    d = os.path.join(here, "..", "marks")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, f"{name}.tile"), "w") as f:
+        f.write(f"# {name}: {desc}\nw=#ffffff\ny=#ffd23f\n---\n" + "\n".join(rows) + "\n")
+
+write_mark("unread", "white sparkle with a yellow heart: new, not seen yet", [
+    "..w..",
+    "..w..",
+    "wwyww",
+    "..w..",
+    "..w..",
+])
+write_mark("unread_b", "small sparkle (twinkle frame)", [
+    ".....",
+    "..w..",
+    ".wyw.",
+    "..w..",
+    ".....",
+])
 print("ok")

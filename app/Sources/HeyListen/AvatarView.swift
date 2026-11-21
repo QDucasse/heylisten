@@ -5,6 +5,7 @@ import SwiftUI
 enum Sprites {
     static let avatarPixels: CGFloat = 16   // art/tiles grid size
     static let overlayPixels: CGFloat = 9   // art/overlays grid size
+    static let markPixels: CGFloat = 5      // art/marks grid size (unread sparkle)
 
     private static var cache: [String: NSImage] = [:]
 
@@ -35,7 +36,7 @@ struct AvatarView: View {
     private var overlay: String? {
         switch item.mood {
         case .permission: return "excl"
-        case .reply, .waiting: return "question"
+        case .reply, .waiting: return "question"   // new: bobbing; seen: still
         case .idle: return "zzz"
         case .offline: return "unplugged"
         case .busy: return nil
@@ -49,12 +50,6 @@ struct AvatarView: View {
             let m = motion(t)
             ZStack(alignment: .topTrailing) {
                 ZStack {
-                    if item.mood == .reply {
-                        Circle()
-                            .fill(tintColor.opacity(0.35 + 0.25 * m.glow))
-                            .frame(width: side * 0.9, height: side * 0.9)
-                            .blur(radius: 3 * scale)
-                    }
                     sprite("\(face)_mask")
                         .colorMultiply(bodyColor(shimmer: m.shimmer))
                     sprite("\(face)_detail")
@@ -67,7 +62,7 @@ struct AvatarView: View {
                 if let overlay {
                     // Two-frame badge animation: <id> / <id>_b.
                     let period = item.mood == .permission ? 0.36 : 0.7
-                    // A seen "?" (waiting) stays still; everything else alternates its two frames.
+                    // A seen "?" (waiting) stays on its first frame; everything else alternates.
                     let alt = item.mood != .waiting && Int((t / period).rounded(.down)) % 2 == 1
                     sprite(alt ? overlay + "_b" : overlay)
                         .frame(width: Sprites.overlayPixels * overlayScale, height: Sprites.overlayPixels * overlayScale)
@@ -75,6 +70,17 @@ struct AvatarView: View {
                 }
             }
             .frame(width: side, height: side)
+            // Unread mark, top left: turn finished and not seen yet. A small twinkling sparkle
+            // (5x5 art at 2x = 10 pt) that sits in the empty rows above the mascot.
+            .overlay(alignment: .topLeading) {
+                if item.mood == .reply {
+                    let big = Int((t / 0.5).rounded(.down)) % 2 == 0
+                    sprite(big ? "unread" : "unread_b")
+                        .frame(width: Sprites.markPixels * 2, height: Sprites.markPixels * 2)
+                        .offset(x: -2, y: 0)
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay {
                 if !item.jumpable {
                     RoundedRectangle(cornerRadius: 4 * scale)
@@ -104,7 +110,7 @@ struct AvatarView: View {
         }
     }
 
-    private struct Motion { var dx = 0.0, dy = 0.0, opacity = 1.0, glow = 0.0, shimmer = 0.0 }
+    private struct Motion { var dx = 0.0, dy = 0.0, opacity = 1.0, shimmer = 0.0 }
 
     /// Whole-pixel offsets only: no rotation, no fractional scaling.
     private func motion(_ t: TimeInterval) -> Motion {
@@ -121,10 +127,8 @@ struct AvatarView: View {
             let step = Int((t / 0.12).rounded(.down)) % 6
             m.dy = [0, -2, -1, 0, -2, 0][step]
             m.dx = [0, 1, 0, -1, 0, 0][step]
-        case .reply:
-            m.glow = 0.5 + 0.5 * sin((t + phase) * 2 * .pi / 1.6)
-        case .waiting:
-            break   // steady: open and already seen
+        case .reply, .waiting:
+            break   // new: unread sparkle + bobbing ?; seen: still ?
         case .offline:
             m.opacity = 0.5
         }
