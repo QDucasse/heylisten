@@ -125,6 +125,7 @@ struct MenuContent: View {
     private func symbol(_ m: Mood) -> String {
         switch m {
         case .permission: return "❗"
+        case .error: return "❌"
         case .reply: return "💬"
         case .waiting: return "💭"
         case .busy: return "⚙️"

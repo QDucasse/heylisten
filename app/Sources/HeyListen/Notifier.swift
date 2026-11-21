@@ -15,11 +15,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func post(item: SessionItem, sound: Bool) {
         let c = UNMutableNotificationContent()
         let where_ = item.isLocal ? "" : " · \(item.host)"
-        let permission = item.wire.attention?.state == "permission"
-        c.title = permission ? "\(item.project) needs permission" : "\(item.project) is waiting for you"
-        c.subtitle = "\(item.wire.name)\(where_)"
+        let state = item.wire.attention?.state
+        let permission = state == "permission"
         let msg = item.wire.attention?.message ?? ""
-        c.body = msg.isEmpty || msg == "Turn finished" ? (permission ? "Claude is asking to continue." : "Turn finished.") : msg
+        c.subtitle = "\(item.wire.name)\(where_)"
+        if state == "error" {
+            c.title = "\(item.project) stopped"
+            c.body = "The turn ended on an API error: \(msg.isEmpty ? "unknown" : msg)."
+        } else {
+            c.title = permission ? "\(item.project) needs permission" : "\(item.project) is waiting for you"
+            c.body = msg.isEmpty || msg == "Turn finished" ? (permission ? "Claude is asking to continue." : "Turn finished.") : msg
+        }
         if sound { c.sound = .default }
         c.userInfo = ["key": item.id]
         c.threadIdentifier = item.id

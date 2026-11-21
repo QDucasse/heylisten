@@ -23,6 +23,9 @@ SESSIONS_DIR = os.path.join(HOME, ".claude", "sessions")
 MARKER_DIR = os.environ.get("HEYLISTEN_DIR", os.path.join(HOME, ".claude", "heylisten"))
 INTERVAL = 1.0
 HEARTBEAT = 15.0
+LONG_TURN = 600          # busy this long (s): a long turn
+COMPACT_STALE = 600      # a compaction marker older than this was left behind (failed compaction)
+AGENT_STALE = 3 * 3600   # same for a subagent that never reported stopping
 
 EXTRA_PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
 
@@ -119,6 +122,18 @@ def parse_tmux_field(v):
 
 def snapshot():
     sessions = []
+    now = time.time()
+    try:
+        markers = os.listdir(MARKER_DIR)
+    except Exception:
+        markers = []
+
+    def fresh(name, max_age):
+        try:
+            return now - os.path.getmtime(os.path.join(MARKER_DIR, name)) < max_age
+        except Exception:
+            return False
+
     try:
         names = os.listdir(SESSIONS_DIR)
     except Exception:
@@ -136,7 +151,7 @@ def snapshot():
         mname = marker_name(sid)
         marker = load_json(os.path.join(MARKER_DIR, mname)) if mname else None
         attention = None
-        if isinstance(marker, dict) and marker.get("state") in ("permission", "reply"):
+        if isinstance(marker, dict) and marker.get("state") in ("permission", "reply", "error"):
             attention = {
                 "state": marker["state"],
                 "message": marker.get("message") or "",
@@ -149,7 +164,15 @@ def snapshot():
         # Prompt cache gone cold: idle for longer than its TTL since the last turn ended, so the
         # next message re-sends the whole context. (While busy the turn keeps it warm.)
         ts, ttl = ctx.get("ts"), ctx.get("ttl") or 3600
-        cold = status != "busy" and isinstance(ts, (int, float)) and time.time() - ts > ttl
+        cold = status != "busy" and isinstance(ts, (int, float)) and now - ts > ttl
+        stem = mname[:-len(".json")] if mname else None
+        compacting = bool(stem) and fresh(stem + ".compacting.json", COMPACT_STALE)
+        agents = sum(1 for n in markers if stem and n.startswith(stem + ".agent.") and n.endswith(".json")
+                     and fresh(n, AGENT_STALE))
+        # Turn start from the hook (the sessions file's statusUpdatedAt also moves mid-turn).
+        turn = load_json(os.path.join(MARKER_DIR, stem + ".turn.json")) if stem else None
+        since = turn.get("ts") if isinstance(turn, dict) else None
+        long_turn = status == "busy" and isinstance(since, (int, float)) and now - since > LONG_TURN
         sessions.append({
             "pid": pid,
             "sessionId": sid,
@@ -161,6 +184,9 @@ def snapshot():
             "attention": attention,
             "contextTokens": tokens if isinstance(tokens, int) else None,
             "cacheCold": cold,
+            "compacting": compacting,
+            "subagents": agents,
+            "longTurn": long_turn,
         })
     ttys = ttys_for([s["pid"] for s in sessions])
     for s in sessions:

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """heylisten Claude Code hook: turns hook events into marker files.
 
-Registered for Notification, Stop, UserPromptSubmit, PostToolUse, SessionEnd, and SessionStart
-(matcher "compact"). Writes ~/.claude/heylisten/<session_id>.json with
-{"state": "permission"|"reply", ...}, and <session_id>.ctx.json with {"tokens": N, "ttl": S, "ts": T}
-(context size and prompt-cache lifetime at the end of the last turn, read from the transcript).
+Registered for Notification, Stop, StopFailure, UserPromptSubmit, PostToolUse, SessionEnd,
+SessionStart (matcher "compact"), PreCompact, SubagentStart and SubagentStop. Writes, in
+~/.claude/heylisten/:
+  <sid>.json             {"state": "permission"|"reply"|"error", ...}: Claude is waiting on you
+  <sid>.ctx.json         {"tokens": N, "ttl": S, "ts": T}: context size and prompt-cache lifetime
+                         at the end of the last turn, read from the transcript
+  <sid>.compacting.json  {"ts": T}: a compaction is running
+  <sid>.turn.json        {"ts": T}: when the running turn started (UserPromptSubmit)
+  <sid>.agent.<id>.json  {"type": ..., "ts": T}: one per running subagent
 Never fails loudly: always exits 0, never prints to stdout.
 """
 import json
@@ -17,9 +22,25 @@ MARKER_DIR = os.environ.get(
 )
 
 
+def safe_id(s):
+    return "".join(c for c in s if c.isalnum() or c in "-_")
+
+
 def marker_path(sid):
-    safe = "".join(c for c in sid if c.isalnum() or c in "-_")
+    safe = safe_id(sid)
     return os.path.join(MARKER_DIR, safe + ".json") if safe else None
+
+
+# StopFailure's `error` categories, as shown in the notification and hover card.
+ERRORS = {
+    "rate_limit": "rate limited",
+    "overloaded": "API overloaded",
+    "authentication_failed": "authentication failed",
+    "billing_error": "billing problem",
+    "invalid_request": "invalid request",
+    "server_error": "API server error",
+    "max_output_tokens": "hit the output token limit",
+}
 
 
 def read_marker(path):
@@ -108,7 +129,11 @@ def main():
     if not path:
         return
     name = ev.get("hook_event_name") or ""
-    ctx_path = path[:-len(".json")] + ".ctx.json"
+    stem = path[:-len(".json")]
+    ctx_path = stem + ".ctx.json"
+    compacting_path = stem + ".compacting.json"
+    turn_path = stem + ".turn.json"
+    agent_path = stem + ".agent." + safe_id(ev.get("agent_id") or "") + ".json" if ev.get("agent_id") else None
     cur = read_marker(path)
     now = time.time()
 
@@ -131,17 +156,40 @@ def main():
                 mark("reply", ev.get("message") or "")
     elif name == "Stop":
         mark("reply", "Turn finished")
+        remove(compacting_path)
+        remove(turn_path)
         tokens, ttl = context_usage(ev.get("transcript_path") or "")
         if tokens:
             write_marker(ctx_path, {"tokens": tokens, "ttl": ttl, "ts": now})
+    elif name == "StopFailure":
+        err = ev.get("error") or ""
+        mark("error", ERRORS.get(err) or err.replace("_", " ") or "API error")
+        remove(compacting_path)
+        remove(turn_path)
     elif name == "UserPromptSubmit":
         remove(path)
+        remove(compacting_path)
+        write_marker(turn_path, {"ts": now})
     elif name == "SessionEnd":
         remove(path)
         remove(ctx_path)
+        remove(compacting_path)
+        remove(turn_path)
+        prefix = os.path.basename(stem) + ".agent."
+        for n in os.listdir(MARKER_DIR) if os.path.isdir(MARKER_DIR) else []:
+            if n.startswith(prefix):
+                remove(os.path.join(MARKER_DIR, n))
     elif name == "SessionStart":
-        # Only registered for source "compact": the old count is stale until the next Stop.
+        # Only registered for source "compact": the compaction is over, and the old context
+        # count is stale until the next Stop.
         remove(ctx_path)
+        remove(compacting_path)
+    elif name == "PreCompact":
+        write_marker(compacting_path, {"trigger": ev.get("trigger") or "", "ts": now})
+    elif name == "SubagentStart" and agent_path:
+        write_marker(agent_path, {"type": ev.get("agent_type") or "", "ts": now})
+    elif name == "SubagentStop" and agent_path:
+        remove(agent_path)
     elif name == "PostToolUse":
         if cur and cur.get("state") == "permission":
             remove(path)

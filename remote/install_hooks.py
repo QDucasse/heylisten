@@ -30,6 +30,10 @@ EVENTS = {
     "PostToolUse": ("*", GUARDED_CMD),
     "SessionEnd": (None, HOOK_CMD),
     "SessionStart": ("compact", HOOK_CMD),   # after a compaction: forget the context size
+    "StopFailure": (None, HOOK_CMD),         # the turn ended on an API error
+    "PreCompact": (None, HOOK_CMD),
+    "SubagentStart": (None, HOOK_CMD),
+    "SubagentStop": (None, HOOK_CMD),
 }
 
 

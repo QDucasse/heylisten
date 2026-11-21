@@ -26,7 +26,10 @@ render "$root/art/tiles" "$tmp/tiles" --split --scale 1
 render "$root/art/overlays" "$tmp/overlays" --scale 1
 cp "$tmp"/tiles/*_mask.png "$tmp"/tiles/*_detail.png "$app/Contents/Resources/sprites/"
 for f in "$tmp"/overlays/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f" "$app/Contents/Resources/sprites/"; done
-# Unread mark (top-left sparkle on "just finished, not seen yet" avatars).
+# Subagent followers: tinted like the mascot, so mask/detail layers.
+render "$root/art/minis" "$tmp/minis" --split --scale 1
+cp "$tmp"/minis/*_mask.png "$tmp"/minis/*_detail.png "$app/Contents/Resources/sprites/"
+# Top-left marks (unread sparkle, long-turn sweat drop).
 render "$root/art/marks" "$tmp/marks" --scale 1
 for f in "$tmp"/marks/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f" "$app/Contents/Resources/sprites/"; done
 # Menu bar icon (template silhouette) and app icon (.icns from the 32x32 fairy at every size).

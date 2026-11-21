@@ -462,7 +462,7 @@ struct ItemView: View {
                             .lineLimit(1)
                         Text(subtitle)
                             .font(.system(size: 10))
-                            .foregroundStyle(item.mood == .permission ? Color.red : Color.secondary)
+                            .foregroundStyle(item.mood == .permission || item.mood == .error ? Color.red : Color.secondary)
                             .lineLimit(1)
                     }
                     .frame(maxWidth: 140, alignment: .leading)
@@ -502,6 +502,7 @@ struct ItemView: View {
         case .busy: state = "working"
         case .idle: state = "parked (not open)"
         case .permission: state = "needs permission"
+        case .error: state = "stopped on an error"
         case .reply: state = "just finished"
         case .waiting: state = "waiting for you"
         case .offline: state = "offline"
@@ -527,6 +528,9 @@ struct HoverCard: View {
                 row("context", "\(t / 1000)k of \(ContextLevel.window / 1000)k (\(t * 100 / ContextLevel.window)%)")
             }
             if item.cacheCold { row("cache", "expired: the next message re-reads the context") }
+            if item.wire.compacting == true { row("context", "compacting…") }
+            if let n = item.wire.subagents, n > 0 { row("subagents", "\(n) running") }
+            if item.wire.longTurn == true { row("turn", "running for over 10 min") }
             if let m = item.wire.attention?.message, !m.isEmpty {
                 Text(m).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(3).frame(maxWidth: 320, alignment: .leading)
             }
@@ -543,6 +547,7 @@ struct HoverCard: View {
         case .busy: return "working"
         case .idle: return "parked: not open in any terminal"
         case .permission: return "needs permission"
+        case .error: return "stopped on an API error"
         case .reply: return "turn finished, not seen yet"
         case .waiting: return "waiting for your next message"
         case .offline: return "host offline"

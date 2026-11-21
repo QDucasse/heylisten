@@ -1,0 +1,14 @@
+# error_b: white x on a dark disc (blink frame)
+k=#1f1a17
+d=#3a3330
+r=#ffffff
+---
+..kkkkk..
+.kdddddk.
+kdrdddrdk
+kddrdrddk
+kdddrdddk
+kddrdrddk
+kdrdddrdk
+.kdddddk.
+..kkkkk..

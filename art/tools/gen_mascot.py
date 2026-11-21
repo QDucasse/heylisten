@@ -39,6 +39,21 @@ FACES = {
 }
 DESC = {"awake": "eyes open", "sleeping": "eyes closed (lids)", "alarmed": "tall wide-open eyes"}
 
+# Faces drawn around each eye's centre (the upper pixel of the 2px-tall open eye): left eye's
+# offsets as given, right eye's mirrored.
+def around(offsets):
+    def eyes(to):
+        out = []
+        for ex, m in ((5, 1), (12, -1)):
+            cx, cy = to(ex, 1, 0)
+            out += [(cx + m * dx, cy + dy) for dx, dy in offsets]
+        return out
+    return eyes
+FACES["ko"] = around([(-1, -1), (1, -1), (0, 0), (-1, 1), (1, 1)])      # x x
+DESC["ko"] = "X eyes (turn stopped on an API error)"
+FACES["squint"] = around([(-1, -1), (0, 0), (-1, 1)])                    # > <
+DESC["squint"] = "squeezed > < eyes (compacting: chewing on the context)"
+
 # Dizzy (context window filling up): each eye is a 4x4 square spiral over the open eye, the right
 # one mirrored. Four frames turn it a quarter each, so the eyes spin.
 SPIRAL = ["kkkk",

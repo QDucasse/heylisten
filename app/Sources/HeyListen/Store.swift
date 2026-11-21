@@ -174,6 +174,7 @@ final class Store: ObservableObject {
         if !h.status.isUsable { return .offline }
         if s.attention?.state == "permission" { return .permission }
         if s.status == "busy" { return .busy }
+        if s.attention?.state == "error" { return .error }
         guard isOpen(host: h, s: s) else { return .idle }
         if let a = s.attention, a.state == "reply", a.ts > (acked[key(h.name, s)] ?? 0) { return .reply }
         return .waiting
@@ -208,8 +209,8 @@ final class Store: ObservableObject {
                     if a.state == "reply" { self.acknowledge(item) }
                     return
                 }
-                // Sound only for permission: a finished turn can wait, a blocked one can't.
-                Notifier.shared.post(item: item, sound: a.state == "permission")
+                // Sound only when the work is stuck: a finished turn can wait, a blocked one can't.
+                Notifier.shared.post(item: item, sound: a.state != "reply")
             }
         }
         if notified.count > 2000 { notified.removeAll() }

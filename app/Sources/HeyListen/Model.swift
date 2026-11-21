@@ -13,7 +13,7 @@ struct TmuxRef: Codable, Hashable {
 }
 
 struct WireAttention: Codable, Hashable {
-    var state: String      // "permission" | "reply"
+    var state: String      // "permission" | "reply" | "error"
     var message: String
     var ts: Double
 }
@@ -30,6 +30,9 @@ struct WireSession: Codable, Hashable {
     var tty: String?
     var contextTokens: Int?    // context size after the last turn (nil: unknown, e.g. just compacted)
     var cacheCold: Bool?       // idle past the prompt cache TTL: the next message re-reads it all
+    var compacting: Bool?      // a compaction is running
+    var subagents: Int?        // subagents running right now
+    var longTurn: Bool?        // busy for over 10 minutes
 }
 
 struct WireClient: Codable, Hashable {
@@ -104,6 +107,7 @@ let localHostName = "local"
 enum Mood: Equatable {
     case busy        // working
     case permission  // blocked on a permission prompt (shown even when detached: it stops the work)
+    case error       // the turn stopped on an API error (rate limit, overload...): shown like permission
     case reply       // open, idle, turn just finished and not seen yet  -> pulsing ?
     case waiting     // open, idle, already seen                         -> steady ?
     case idle        // not open anywhere (no tmux client attached)      -> sleeping + zzz

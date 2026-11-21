@@ -6,7 +6,8 @@ import SwiftUI
 enum Sprites {
     static let avatarPixels: CGFloat = 16   // art/tiles grid size
     static let overlayPixels: CGFloat = 9   // art/overlays grid size
-    static let markPixels: CGFloat = 5      // art/marks grid size (unread sparkle)
+    static let markPixels: CGFloat = 5      // art/marks grid size (unread sparkle, sweat drop)
+    static let miniPixels: CGFloat = 7      // art/minis grid size (subagent followers)
 
     private static var cache: [String: NSImage] = [:]
     private static var cgCache: [String: CGImage] = [:]
@@ -59,7 +60,10 @@ struct AvatarView: View {
 
     var body: some View {
         let side = Sprites.avatarPixels * scale
-        AvatarLayers(config: .init(id: item.id, mood: item.mood, tint: item.tint, scale: scale, context: item.context, cacheCold: item.cacheCold))
+        AvatarLayers(config: .init(id: item.id, mood: item.mood, tint: item.tint, scale: scale,
+                                   context: item.context, cacheCold: item.cacheCold,
+                                   compacting: item.wire.compacting ?? false,
+                                   subagents: item.wire.subagents ?? 0, longTurn: item.wire.longTurn ?? false))
             .frame(width: side, height: side)
             .overlay {
                 if !item.jumpable {
@@ -85,7 +89,13 @@ final class AvatarLayerView: NSView {
         var scale: CGFloat
         var context: ContextLevel
         var cacheCold: Bool
+        var compacting: Bool
+        var subagents: Int
+        var longTurn: Bool
     }
+
+    /// Followers drawn for running subagents, at most.
+    private static let maxFollowers = 3
 
     /// Badges: 9x9 art at 2x = 18 pt (12x12 art only offered 12 or 24 pt at whole-number scales).
     private let overlayScale: CGFloat = 2
@@ -93,8 +103,11 @@ final class AvatarLayerView: NSView {
     private let bodyLayer = CALayer()     // moves and fades as a whole
     private let maskLayer = CALayer()     // tinted mascot body
     private let detailLayer = CALayer()   // eyes, outline
-    private let badgeLayer = CALayer()    // top right: ! ? zzz unplugged
-    private let unreadLayer = CALayer()   // top left: unseen sparkle
+    private let badgeLayer = CALayer()    // top right: ! ? x zzz unplugged
+    private let markLayer = CALayer()     // top left: unseen sparkle, or sweat drop on a long turn
+    /// Bottom right: one small mascot per running subagent (container, tinted body, eyes).
+    private let followers: [(box: CALayer, mask: CALayer, detail: CALayer)] =
+        (0..<maxFollowers).map { _ in (CALayer(), CALayer(), CALayer()) }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -102,8 +115,13 @@ final class AvatarLayerView: NSView {
         layerContentsRedrawPolicy = .never
         bodyLayer.addSublayer(maskLayer)
         bodyLayer.addSublayer(detailLayer)
-        for l in [bodyLayer, badgeLayer, unreadLayer] { layer!.addSublayer(l) }
-        for l in [maskLayer, detailLayer, badgeLayer, unreadLayer] {
+        for l in [bodyLayer, badgeLayer, markLayer] { layer!.addSublayer(l) }
+        for f in followers {
+            f.box.addSublayer(f.mask)
+            f.box.addSublayer(f.detail)
+            layer!.addSublayer(f.box)
+        }
+        for l in [maskLayer, detailLayer, badgeLayer, markLayer] + followers.flatMap({ [$0.mask, $0.detail] }) {
             l.magnificationFilter = .nearest
             l.contentsGravity = .resize
         }
@@ -125,20 +143,24 @@ final class AvatarLayerView: NSView {
         let s = c.scale, side = Sprites.avatarPixels * s
         let badge = Sprites.overlayPixels * overlayScale, mark = Sprites.markPixels * 2
         let center = CGPoint(x: side / 2, y: side / 2)
-        for l in [bodyLayer, maskLayer, detailLayer, badgeLayer, unreadLayer] { l.removeAllAnimations() }
+        let all = [bodyLayer, maskLayer, detailLayer, badgeLayer, markLayer] + followers.flatMap { [$0.box, $0.mask, $0.detail] }
+        for l in all { l.removeAllAnimations() }
         bodyLayer.frame = CGRect(x: 0, y: 0, width: side, height: side)
         maskLayer.frame = bodyLayer.bounds
         detailLayer.frame = bodyLayer.bounds
         badgeLayer.frame = CGRect(x: side - badge + 2, y: side - badge, width: badge, height: badge)
-        unreadLayer.frame = CGRect(x: -2, y: side - mark, width: mark, height: mark)
+        markLayer.frame = CGRect(x: -2, y: side - mark, width: mark, height: mark)
 
         let grey = c.mood == .offline
         let phase = Double(Tint.hashIndex(c.id + "#phase") % 1000) / 1000 * 2   // desync avatars
+        // Compacting: squeezed > < eyes and a chewing bob, whatever else it is doing (except when
+        // stuck on you or an error).
+        let chewing = c.compacting && ![.permission, .error, .offline].contains(c.mood)
         // Context window filling up, or prompt cache gone cold: spinning spiral eyes on an awake
         // mascot (permission keeps its alarmed face, a parked one keeps sleeping). Faster once
         // auto-compaction is close.
-        let dizzy = (c.context != .normal || c.cacheCold) && [.busy, .reply, .waiting].contains(c.mood)
-        let faces = dizzy ? (0..<4).map { "mascot_dizzy\($0)" } : [Self.face(c.mood)]
+        let dizzy = !chewing && (c.context != .normal || c.cacheCold) && [.busy, .reply, .waiting].contains(c.mood)
+        let faces = chewing ? ["mascot_squint"] : dizzy ? (0..<4).map { "mascot_dizzy\($0)" } : [Self.face(c.mood)]
         let tinted = { (face: String, shimmer: Double) in Sprites.tinted("\(face)_mask", Self.bodyColor(c.tint, shimmer), grey: grey) as Any }
         let detail = { (face: String) in Sprites.tinted("\(face)_detail", nil, grey: grey) as Any }
         maskLayer.contents = tinted(faces[0], 0)
@@ -161,15 +183,43 @@ final class AvatarLayerView: NSView {
             badgeLayer.isHidden = true
         }
 
-        // Unread mark: turn finished and not seen yet. A small twinkling sparkle in the empty
-        // rows above the mascot.
-        unreadLayer.isHidden = c.mood != .reply
-        if c.mood == .reply {
-            unreadLayer.contents = Sprites.cgImage("unread")
-            animate(unreadLayer, "contents", [Sprites.cgImage("unread") as Any, Sprites.cgImage("unread_b") as Any], step: 0.5)
+        // Top-left mark, in the empty rows above the mascot. Unread: turn finished and not seen
+        // yet, a twinkling sparkle. Long turn: working for over 10 minutes, a dripping sweat drop.
+        let mark_ = c.mood == .reply ? "unread" : c.mood == .busy && c.longTurn ? "sweat" : nil
+        markLayer.isHidden = mark_ == nil
+        if let m = mark_ {
+            markLayer.contents = Sprites.cgImage(m)
+            animate(markLayer, "contents", [Sprites.cgImage(m) as Any, Sprites.cgImage(m + "_b") as Any], step: m == "sweat" ? 0.4 : 0.5)
+        }
+
+        // Subagent followers: small mascots in the project colour along the bottom edge, right to
+        // left, trotting (legs swap and a 1px hop), each a little out of step with the others.
+        let ms = s / 2, mw = Sprites.miniPixels * ms
+        let shown = c.mood == .offline ? 0 : min(c.subagents, Self.maxFollowers)
+        let mini = ["mini", "mini_b"]
+        for (i, f) in followers.enumerated() {
+            f.box.isHidden = i >= shown
+            guard i < shown else { continue }
+            f.box.frame = CGRect(x: side - mw * CGFloat(i + 1) - ms * CGFloat(i), y: -ms, width: mw, height: mw)
+            f.mask.frame = f.box.bounds
+            f.detail.frame = f.box.bounds
+            let fmask = mini.map { Sprites.tinted("\($0)_mask", Self.bodyColor(c.tint, 0), grey: false) as Any }
+            let fdetail = mini.map { Sprites.tinted("\($0)_detail", nil, grey: false) as Any }
+            f.mask.contents = fmask[0]
+            f.detail.contents = fdetail[0]
+            let p = phase + Double(i) * 0.13
+            animate(f.mask, "contents", fmask, step: 0.2, phase: p)
+            animate(f.detail, "contents", fdetail, step: 0.2, phase: p)
+            let base = f.box.position
+            animate(f.box, "position", [base, CGPoint(x: base.x, y: base.y + ms)].map { NSValue(point: $0) }, step: 0.2, phase: p)
         }
 
         let at = { (dx: CGFloat, dy: CGFloat) in NSValue(point: CGPoint(x: center.x + dx * s, y: center.y + dy * s)) }
+        if chewing {
+            // Chew: two quick dips, a pause.
+            animate(bodyLayer, "position", [0, -1, 0, -1, 0, 0].map { at(0, $0) }, step: 0.15, phase: phase)
+            return
+        }
         switch c.mood {
         case .busy:
             animate(bodyLayer, "position", [0, 1, 0, 0].map { at(0, $0) }, step: 0.25, phase: phase)
@@ -181,7 +231,7 @@ final class AvatarLayerView: NSView {
             animate(bodyLayer, "opacity", values, step: 0.25, phase: phase)
         case .permission:
             animate(bodyLayer, "position", zip([0, 1, 0, -1, 0, 0], [0, 2, 1, 0, 2, 0]).map { at($0, $1) }, step: 0.12)
-        case .reply, .waiting, .offline:
+        case .reply, .waiting, .offline, .error:
             break
         }
     }
@@ -206,6 +256,7 @@ final class AvatarLayerView: NSView {
         switch mood {
         case .busy, .reply, .waiting: return "mascot_awake"
         case .permission: return "mascot_alarmed"
+        case .error: return "mascot_ko"
         case .idle, .offline: return "mascot_sleeping"
         }
     }
@@ -213,6 +264,7 @@ final class AvatarLayerView: NSView {
     private static func overlay(_ mood: Mood) -> String? {
         switch mood {
         case .permission: return "excl"
+        case .error: return "error"
         case .reply, .waiting: return "question"   // animated either way; unseen also gets the sparkle
         case .idle: return "zzz"
         case .offline: return "unplugged"
