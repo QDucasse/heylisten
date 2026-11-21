@@ -29,9 +29,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         src.resume()
         sigterm = src
         Notifier.shared.setUp()
+        enableLaunchAtLoginOnce()
         MainActor.assumeIsolated {
             Store.shared.start()
             StripController.shared.start()
+        }
+    }
+
+    /// Launch at login is on by default: register once, on first run. Afterwards the menu toggle
+    /// decides, so turning it off is never undone.
+    private func enableLaunchAtLoginOnce() {
+        let key = "launchAtLoginDefaultApplied"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        let service = SMAppService.mainApp
+        guard service.status != .enabled else { return }
+        do {
+            try service.register()
+            hlog("login item: registered (status \(service.status.rawValue))")
+        } catch {
+            hlog("login item: register failed: \(error.localizedDescription)")
         }
     }
 
