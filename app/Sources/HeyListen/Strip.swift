@@ -75,8 +75,9 @@ final class StripController: ObservableObject {
         let size = NSSize(width: hosting.fittingSize.width.rounded(.up), height: hosting.fittingSize.height.rounded(.up))
         var f: NSRect
         if Store.shared.prefs.stripPinned {
-            // Locked: top-right corner of the main display, growing left and down.
-            let vf = (NSScreen.screens.first ?? NSScreen.main!).visibleFrame
+            // Locked: top-right corner of the screen the widget is on (where its free position
+            // is), growing left and down.
+            let vf = anchorScreen.visibleFrame
             let m: CGFloat = 8
             f = NSRect(x: vf.maxX - size.width - m, y: vf.maxY - size.height - m, width: size.width, height: size.height)
         } else {
@@ -85,6 +86,13 @@ final class StripController: ObservableObject {
         f = clampToScreen(f)
         panel.setFrame(f, display: true)
         panel.orderFrontRegardless()
+    }
+
+    /// The screen holding the widget's free (unlocked) position; the main screen if that one is
+    /// gone. Probed just inside the top-left corner, since the anchor can sit on a screen edge.
+    private var anchorScreen: NSScreen {
+        let probe = NSPoint(x: anchor.x + 1, y: anchor.y - 1)
+        return NSScreen.screens.first { $0.frame.contains(probe) } ?? NSScreen.screens.first ?? NSScreen.main!
     }
 
     /// Keep the whole widget on the screen it's (mostly) on.
