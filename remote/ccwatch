@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""ccwatch: stream Claude Code session state as JSON lines (heylisten watcher).
+
+Reads ~/.claude/sessions/*.json (written by Claude Code), ~/.claude/heylisten/*.json
+(written by hook.py) and tmux clients/sessions; prints a full snapshot line whenever
+something changes, plus a heartbeat every 15 s. Python 3 standard library only.
+
+    ccwatch            stream forever
+    ccwatch --once     print one snapshot and exit
+    ccwatch --version  print version
+"""
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+
+VERSION = 1
+HOME = os.path.expanduser("~")
+SESSIONS_DIR = os.path.join(HOME, ".claude", "sessions")
+MARKER_DIR = os.environ.get("HEYLISTEN_DIR", os.path.join(HOME, ".claude", "heylisten"))
+INTERVAL = 1.0
+HEARTBEAT = 15.0
+
+EXTRA_PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+
+
+def find_tmux():
+    path = os.environ.get("PATH", "") + os.pathsep + os.pathsep.join(EXTRA_PATH)
+    return shutil.which("tmux", path=path)
+
+
+TMUX = find_tmux()
+
+
+def load_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
+def ttys_for(pids):
+    if not pids:
+        return {}
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "pid=,tty=", "-p", ",".join(str(p) for p in pids)],
+            capture_output=True, text=True, timeout=3,
+        ).stdout
+    except Exception:
+        return {}
+    res = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] not in ("?", "??", "-"):
+            res[int(parts[0])] = "/dev/" + parts[1]
+    return res
+
+
+def tmux_lines(*args):
+    if not TMUX:
+        return []
+    try:
+        r = subprocess.run([TMUX, *args], capture_output=True, text=True, timeout=3)
+    except Exception:
+        return []
+    if r.returncode != 0:
+        return []
+    return [l for l in r.stdout.splitlines() if l]
+
+
+def tmux_state():
+    clients = []
+    for l in tmux_lines("list-clients", "-F", "#{client_tty}\t#{session_name}\t#{window_id}\t#{pane_id}"):
+        p = l.split("\t")
+        if len(p) == 4:
+            clients.append({"tty": p[0], "session": p[1], "window": p[2], "pane": p[3]})
+    sessions = []
+    for l in tmux_lines("list-sessions", "-F", "#{session_name}\t#{session_attached}\t#{window_id}\t#{pane_id}"):
+        p = l.split("\t")
+        if len(p) == 4:
+            sessions.append({"name": p[0], "attached": int(p[1] or 0), "window": p[2], "pane": p[3]})
+    return {"available": TMUX is not None, "clients": clients, "sessions": sessions}
+
+
+def parse_tmux_field(v):
+    # "<session>:<@window>.<%pane>"; session names may contain ':' so split from the right.
+    if not v or not isinstance(v, str):
+        return None
+    sess, _, rest = v.rpartition(":")
+    win, _, pane = rest.partition(".")
+    if not sess:
+        return None
+    return {"session": sess, "window": win, "pane": pane}
+
+
+def snapshot():
+    sessions = []
+    try:
+        names = os.listdir(SESSIONS_DIR)
+    except Exception:
+        names = []
+    for n in sorted(names):
+        if not n.endswith(".json"):
+            continue
+        d = load_json(os.path.join(SESSIONS_DIR, n))
+        if not isinstance(d, dict):
+            continue
+        pid = d.get("pid")
+        if not isinstance(pid, int) or not pid_alive(pid):
+            continue
+        sid = d.get("sessionId") or ""
+        marker = load_json(os.path.join(MARKER_DIR, sid + ".json")) if sid else None
+        attention = None
+        if isinstance(marker, dict) and marker.get("state") in ("permission", "reply"):
+            attention = {
+                "state": marker["state"],
+                "message": marker.get("message") or "",
+                "ts": marker.get("ts") or 0,
+            }
+        sessions.append({
+            "pid": pid,
+            "sessionId": sid,
+            "name": d.get("name") or "",
+            "cwd": d.get("cwd") or "",
+            "status": d.get("status") or "idle",
+            "kind": d.get("kind") or "",
+            "tmux": parse_tmux_field(d.get("tmux")),
+            "attention": attention,
+        })
+    ttys = ttys_for([s["pid"] for s in sessions])
+    for s in sessions:
+        s["tty"] = ttys.get(s["pid"])
+    return {"type": "snapshot", "sessions": sessions, "tmux": tmux_state()}
+
+
+def emit(obj):
+    sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+def main():
+    if "--version" in sys.argv:
+        print(VERSION)
+        return
+    hello = {"type": "hello", "version": VERSION, "host": socket.gethostname()}
+    if "--once" in sys.argv:
+        emit(hello)
+        emit(snapshot())
+        return
+    emit(hello)
+    last = None
+    last_emit = 0.0
+    while True:
+        snap = snapshot()
+        now = time.time()
+        if snap != last:
+            emit(snap)
+            last = snap
+            last_emit = now
+        elif now - last_emit >= HEARTBEAT:
+            emit({"type": "heartbeat"})
+            last_emit = now
+        time.sleep(INTERVAL)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass
