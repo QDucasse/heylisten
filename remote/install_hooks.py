@@ -13,14 +13,22 @@ SETTINGS = os.environ.get(
     "CLAUDE_SETTINGS", os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 )
 HOOK_CMD = "python3 ~/.local/share/heylisten/hook.py"
+# PostToolUse fires after every tool call, but only matters while a permission marker exists
+# (you approved, so it's running again). Starting Python costs ~0.3 s per call, so a cheap grep
+# skips it otherwise. A false positive (the word in some other marker's message) only means the
+# hook runs and does nothing. `if` keeps the exit code 0 when grep finds nothing.
+GUARDED_CMD = (
+    "if grep -qs '\"permission\"' \"${HEYLISTEN_DIR:-$HOME/.claude/heylisten}\"/*.json; "
+    "then " + HOOK_CMD + "; fi"
+)
 MARK = "heylisten/hook.py"
-# event -> matcher (None = no matcher key)
+# event -> (matcher (None = no matcher key), command)
 EVENTS = {
-    "Notification": None,
-    "Stop": None,
-    "UserPromptSubmit": None,
-    "PostToolUse": "*",
-    "SessionEnd": None,
+    "Notification": (None, HOOK_CMD),
+    "Stop": (None, HOOK_CMD),
+    "UserPromptSubmit": (None, HOOK_CMD),
+    "PostToolUse": ("*", GUARDED_CMD),
+    "SessionEnd": (None, HOOK_CMD),
 }
 
 
@@ -37,11 +45,11 @@ def main():
         shutil.copy2(SETTINGS, SETTINGS + ".bak-heylisten")
     hooks = settings.setdefault("hooks", {})
     changed = []
-    for event, matcher in EVENTS.items():
+    for event, (matcher, cmd) in EVENTS.items():
         groups = hooks.get(event, [])
         kept = [g for g in groups if not is_ours(g)]
         if not uninstall:
-            entry = {"hooks": [{"type": "command", "command": HOOK_CMD, "timeout": 5}]}
+            entry = {"hooks": [{"type": "command", "command": cmd, "timeout": 5}]}
             if matcher is not None:
                 entry = {"matcher": matcher, **entry}
             kept.append(entry)
