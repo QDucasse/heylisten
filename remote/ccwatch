@@ -142,15 +142,25 @@ def snapshot():
                 "message": marker.get("message") or "",
                 "ts": marker.get("ts") or 0,
             }
+        ctx = load_json(os.path.join(MARKER_DIR, mname[:-len(".json")] + ".ctx.json")) if mname else None
+        ctx = ctx if isinstance(ctx, dict) else {}
+        tokens = ctx.get("tokens")
+        status = d.get("status") or "idle"
+        # Prompt cache gone cold: idle for longer than its TTL since the last turn ended, so the
+        # next message re-sends the whole context. (While busy the turn keeps it warm.)
+        ts, ttl = ctx.get("ts"), ctx.get("ttl") or 3600
+        cold = status != "busy" and isinstance(ts, (int, float)) and time.time() - ts > ttl
         sessions.append({
             "pid": pid,
             "sessionId": sid,
             "name": d.get("name") or "",
             "cwd": d.get("cwd") or "",
-            "status": d.get("status") or "idle",
+            "status": status,
             "kind": d.get("kind") or "",
             "tmux": parse_tmux_field(d.get("tmux")),
             "attention": attention,
+            "contextTokens": tokens if isinstance(tokens, int) else None,
+            "cacheCold": cold,
         })
     ttys = ttys_for([s["pid"] for s in sessions])
     for s in sessions:

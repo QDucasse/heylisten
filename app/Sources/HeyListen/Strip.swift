@@ -523,6 +523,10 @@ struct HoverCard: View {
             row("host", item.host)
             if let t = item.wire.tmux { row("tmux", "\(t.session) \(t.window) \(t.pane)") }
             row("state", stateText)
+            if let t = item.wire.contextTokens {
+                row("context", "\(t / 1000)k of \(ContextLevel.window / 1000)k (\(t * 100 / ContextLevel.window)%)")
+            }
+            if item.cacheCold { row("cache", "expired: the next message re-reads the context") }
             if let m = item.wire.attention?.message, !m.isEmpty {
                 Text(m).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(3).frame(maxWidth: 320, alignment: .leading)
             }

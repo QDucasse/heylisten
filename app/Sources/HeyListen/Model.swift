@@ -28,6 +28,8 @@ struct WireSession: Codable, Hashable {
     var tmux: TmuxRef?
     var attention: WireAttention?
     var tty: String?
+    var contextTokens: Int?    // context size after the last turn (nil: unknown, e.g. just compacted)
+    var cacheCold: Bool?       // idle past the prompt cache TTL: the next message re-reads it all
 }
 
 struct WireClient: Codable, Hashable {
@@ -108,6 +110,23 @@ enum Mood: Equatable {
     case offline     // host unreachable
 }
 
+/// How full a session's context window is, from the token count the Stop hook records.
+enum ContextLevel: Equatable {
+    case normal
+    case high   // worth a /compact or /clear soon: spiral eyes
+    case full   // auto-compaction is close: the spirals spin faster
+
+    /// Every session runs with the 1M-token context window.
+    static let window = 1_000_000
+    static let highFraction = 0.6
+    static let fullFraction = 0.8
+
+    init(tokens: Int?) {
+        let f = Double(tokens ?? 0) / Double(Self.window)
+        self = f >= Self.fullFraction ? .full : f >= Self.highFraction ? .high : .normal
+    }
+}
+
 struct SessionItem: Identifiable, Equatable {
     let host: String
     let wire: WireSession
@@ -124,6 +143,8 @@ struct SessionItem: Identifiable, Equatable {
         let p = (wire.cwd as NSString).lastPathComponent
         return p.isEmpty ? wire.name : p
     }
+    var context: ContextLevel { ContextLevel(tokens: wire.contextTokens) }
+    var cacheCold: Bool { wire.cacheCold ?? false }
     /// Remote sessions outside tmux cannot be reached.
     var jumpable: Bool { isLocal || wire.tmux != nil }
 }

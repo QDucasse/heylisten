@@ -59,7 +59,7 @@ struct AvatarView: View {
 
     var body: some View {
         let side = Sprites.avatarPixels * scale
-        AvatarLayers(config: .init(id: item.id, mood: item.mood, tint: item.tint, scale: scale))
+        AvatarLayers(config: .init(id: item.id, mood: item.mood, tint: item.tint, scale: scale, context: item.context, cacheCold: item.cacheCold))
             .frame(width: side, height: side)
             .overlay {
                 if !item.jumpable {
@@ -83,6 +83,8 @@ final class AvatarLayerView: NSView {
         var mood: Mood
         var tint: Int
         var scale: CGFloat
+        var context: ContextLevel
+        var cacheCold: Bool
     }
 
     /// Badges: 9x9 art at 2x = 18 pt (12x12 art only offered 12 or 24 pt at whole-number scales).
@@ -131,11 +133,24 @@ final class AvatarLayerView: NSView {
         unreadLayer.frame = CGRect(x: -2, y: side - mark, width: mark, height: mark)
 
         let grey = c.mood == .offline
-        let face = Self.face(c.mood)
-        let tinted = { (shimmer: Double) in Sprites.tinted("\(face)_mask", Self.bodyColor(c.tint, shimmer), grey: grey) as Any }
-        maskLayer.contents = tinted(0)
-        detailLayer.contents = Sprites.tinted("\(face)_detail", nil, grey: grey)
+        let phase = Double(Tint.hashIndex(c.id + "#phase") % 1000) / 1000 * 2   // desync avatars
+        // Context window filling up, or prompt cache gone cold: spinning spiral eyes on an awake
+        // mascot (permission keeps its alarmed face, a parked one keeps sleeping). Faster once
+        // auto-compaction is close.
+        let dizzy = (c.context != .normal || c.cacheCold) && [.busy, .reply, .waiting].contains(c.mood)
+        let faces = dizzy ? (0..<4).map { "mascot_dizzy\($0)" } : [Self.face(c.mood)]
+        let tinted = { (face: String, shimmer: Double) in Sprites.tinted("\(face)_mask", Self.bodyColor(c.tint, shimmer), grey: grey) as Any }
+        let detail = { (face: String) in Sprites.tinted("\(face)_detail", nil, grey: grey) as Any }
+        maskLayer.contents = tinted(faces[0], 0)
+        detailLayer.contents = detail(faces[0])
         bodyLayer.opacity = c.mood == .offline ? 0.5 : 1
+        let shimmer: [Double] = [0, 1, 0.5, 0]   // busy: a brightness wave over the body
+        if dizzy {
+            let step = c.context == .full ? 0.12 : 0.25
+            let wave = c.mood == .busy ? shimmer : [0, 0, 0, 0]
+            animate(maskLayer, "contents", zip(faces, wave).map(tinted), step: step, phase: phase)
+            animate(detailLayer, "contents", faces.map(detail), step: step, phase: phase)
+        }
 
         if let o = Self.overlay(c.mood) {
             badgeLayer.isHidden = false
@@ -154,12 +169,11 @@ final class AvatarLayerView: NSView {
             animate(unreadLayer, "contents", [Sprites.cgImage("unread") as Any, Sprites.cgImage("unread_b") as Any], step: 0.5)
         }
 
-        let phase = Double(Tint.hashIndex(c.id + "#phase") % 1000) / 1000 * 2   // desync avatars
         let at = { (dx: CGFloat, dy: CGFloat) in NSValue(point: CGPoint(x: center.x + dx * s, y: center.y + dy * s)) }
         switch c.mood {
         case .busy:
             animate(bodyLayer, "position", [0, 1, 0, 0].map { at(0, $0) }, step: 0.25, phase: phase)
-            animate(maskLayer, "contents", [0, 1, 0.5, 0].map(tinted), step: 0.25, phase: phase)
+            if !dizzy { animate(maskLayer, "contents", shimmer.map { tinted(faces[0], $0) }, step: 0.25, phase: phase) }
         case .idle:
             // Slow breathing, stepped at 4 Hz like the rest.
             let values = (0..<16).map { 0.62 + 0.13 * sin(Double($0) * 0.25 * 2 * .pi / 4) }

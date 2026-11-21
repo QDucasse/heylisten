@@ -29,6 +29,7 @@ EVENTS = {
     "UserPromptSubmit": (None, HOOK_CMD),
     "PostToolUse": ("*", GUARDED_CMD),
     "SessionEnd": (None, HOOK_CMD),
+    "SessionStart": ("compact", HOOK_CMD),   # after a compaction: forget the context size
 }
 
 

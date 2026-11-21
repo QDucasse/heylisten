@@ -38,6 +38,32 @@ FACES = {
     "alarmed":  lambda to: [to(5,0,1), to(5,1,0), to(5,1,1), to(12,0,1), to(12,1,0), to(12,1,1)],
 }
 DESC = {"awake": "eyes open", "sleeping": "eyes closed (lids)", "alarmed": "tall wide-open eyes"}
+
+# Dizzy (context window filling up): each eye is a 4x4 square spiral over the open eye, the right
+# one mirrored. Four frames turn it a quarter each, so the eyes spin.
+SPIRAL = ["kkkk",
+          "kBBk",
+          "kBkk",
+          "kBBB"]
+def rot(p):   # 90 degrees clockwise
+    return ["".join(p[len(p) - 1 - r][c] for r in range(len(p))) for c in range(len(p[0]))]
+def spiral_eyes(pat):
+    def eyes(to):
+        out = []
+        for ex, flip in ((5, False), (12, True)):
+            x, y = to(ex, 1, 0)
+            for dy, row in enumerate(pat):
+                for dx, ch in enumerate(row[::-1] if flip else row):
+                    if ch == "k":
+                        # 4 wide over the 1px eye: one column out from the face's centre line
+                        out.append((x - (2 if flip else 1) + dx, y + dy))
+        return out
+    return eyes
+pat = SPIRAL
+for i in range(4):
+    FACES[f"dizzy{i}"] = spiral_eyes(pat)
+    DESC[f"dizzy{i}"] = f"square spiral eyes, frame {i + 1}/4 (context filling up)"
+    pat = rot(pat)
 for name, eyes in FACES.items():
     g, to = body()
     # restore the original eye holes to body first, then draw this expression's eyes
