@@ -22,6 +22,8 @@ final class FloatingPanel: NSPanel {
 enum StripLayout {
     static let padding: CGFloat = 6
     static let spacing: CGFloat = 4
+    /// Between avatars (and host groups): room for the badges that stick out of each avatar.
+    static let itemSpacing: CGFloat = 10
     static let barHeight: CGFloat = 16
 }
 
@@ -226,9 +228,9 @@ struct StripView: View {
     @ViewBuilder
     private func stack<C: View>(_ vertical: Bool, @ViewBuilder _ c: () -> C) -> some View {
         if vertical {
-            VStack(alignment: .leading, spacing: StripLayout.spacing) { c() }
+            VStack(alignment: .leading, spacing: StripLayout.itemSpacing) { c() }
         } else {
-            HStack(alignment: .center, spacing: StripLayout.spacing) { c() }
+            HStack(alignment: .center, spacing: StripLayout.itemSpacing) { c() }
         }
     }
 }
