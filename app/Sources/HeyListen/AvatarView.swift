@@ -36,7 +36,7 @@ struct AvatarView: View {
     private var overlay: String? {
         switch item.mood {
         case .permission: return "excl"
-        case .reply, .waiting: return "question"   // new: bobbing; seen: still
+        case .reply, .waiting: return "question"   // animated either way; unseen also gets the sparkle
         case .idle: return "zzz"
         case .offline: return "unplugged"
         case .busy: return nil
@@ -62,8 +62,7 @@ struct AvatarView: View {
                 if let overlay {
                     // Two-frame badge animation: <id> / <id>_b.
                     let period = item.mood == .permission ? 0.36 : 0.7
-                    // A seen "?" (waiting) stays on its first frame; everything else alternates.
-                    let alt = item.mood != .waiting && Int((t / period).rounded(.down)) % 2 == 1
+                    let alt = Int((t / period).rounded(.down)) % 2 == 1
                     sprite(alt ? overlay + "_b" : overlay)
                         .frame(width: Sprites.overlayPixels * overlayScale, height: Sprites.overlayPixels * overlayScale)
                         .offset(x: 2, y: 0)
@@ -128,7 +127,7 @@ struct AvatarView: View {
             m.dy = [0, -2, -1, 0, -2, 0][step]
             m.dx = [0, 1, 0, -1, 0, 0][step]
         case .reply, .waiting:
-            break   // new: unread sparkle + bobbing ?; seen: still ?
+            break   // ? animates in both; unseen adds the unread sparkle
         case .offline:
             m.opacity = 0.5
         }
