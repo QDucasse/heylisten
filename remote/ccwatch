@@ -43,6 +43,13 @@ def load_json(path):
         return None
 
 
+def marker_name(sid):
+    """Marker filename for a session id: same sanitising as hook.py's marker_path, so both sides
+    agree on the name and an odd id can never escape the marker directory."""
+    safe = "".join(c for c in sid if c.isalnum() or c in "-_")
+    return safe + ".json" if safe else None
+
+
 def pid_alive(pid):
     try:
         os.kill(pid, 0)
@@ -126,7 +133,8 @@ def snapshot():
         if not isinstance(pid, int) or not pid_alive(pid):
             continue
         sid = d.get("sessionId") or ""
-        marker = load_json(os.path.join(MARKER_DIR, sid + ".json")) if sid else None
+        mname = marker_name(sid)
+        marker = load_json(os.path.join(MARKER_DIR, mname)) if mname else None
         attention = None
         if isinstance(marker, dict) and marker.get("state") in ("permission", "reply"):
             attention = {
