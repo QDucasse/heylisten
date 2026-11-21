@@ -44,7 +44,9 @@ struct MenuLabel: View {
     let count: Int
     var body: some View {
         HStack(spacing: 2) {
-            if let img = menuIcon { Image(nsImage: img) }
+            // Always show something: the app has no Dock icon, so an empty (zero-width) status
+            // item would leave no way to reach the menu, e.g. when run without bundled sprites.
+            if let img = menuIcon { Image(nsImage: img) } else { Image(systemName: "sparkle") }
             if count > 0 { Text("\(count)") }
         }
     }
