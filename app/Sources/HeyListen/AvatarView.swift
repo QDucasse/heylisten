@@ -177,7 +177,9 @@ final class AvatarLayerView: NSView {
     private func animate(_ layer: CALayer, _ key: String, _ values: [Any], step: Double, phase: Double = 0) {
         let a = CAKeyframeAnimation(keyPath: key)
         a.values = values
-        a.keyTimes = (0..<values.count).map { NSNumber(value: Double($0) / Double(values.count)) }
+        // Discrete mode needs one more key time than values (closing 1.0): with exactly one per
+        // value, Core Animation holds the first frame forever.
+        a.keyTimes = (0...values.count).map { NSNumber(value: Double($0) / Double(values.count)) }
         a.calculationMode = .discrete
         a.duration = step * Double(values.count)
         a.repeatCount = .infinity
