@@ -118,6 +118,8 @@ struct SessionItem: Identifiable, Equatable {
 
     var id: String { "\(host)|\(wire.sessionId.isEmpty ? String(wire.pid) : wire.sessionId)" }
     var isLocal: Bool { host == localHostName }
+    /// Identity for the user's ordering: survives restarts and new sessions in the same project.
+    var orderKey: String { "\(host)|\(wire.cwd)" }
     var project: String {
         let p = (wire.cwd as NSString).lastPathComponent
         return p.isEmpty ? wire.name : p

@@ -18,6 +18,9 @@ final class Prefs: ObservableObject {
     @Published var stripPinned: Bool { didSet { d.set(stripPinned, forKey: "stripPinned") } }
     /// "normal" (3x, 48 pt) or "mini" (2x, 32 pt).
     @Published var avatarSize: String { didSet { d.set(avatarSize, forKey: "avatarSize") } }
+    /// User-chosen avatar order, as SessionItem.orderKey values (host + project dir). Keys not
+    /// listed sort after listed ones, in arrival order.
+    @Published var itemOrder: [String] { didSet { d.set(itemOrder, forKey: "itemOrder") } }
 
     init() {
         d.register(defaults: [
@@ -38,6 +41,7 @@ final class Prefs: ObservableObject {
         showNames = d.bool(forKey: "showNames")
         stripPinned = d.bool(forKey: "stripPinned")
         avatarSize = d.string(forKey: "avatarSize") ?? "normal"
+        itemOrder = d.stringArray(forKey: "itemOrder") ?? []
     }
 }
 
@@ -146,20 +150,30 @@ final class Store: ObservableObject {
 
     // MARK: items
 
-    var items: [SessionItem] {
-        hosts.flatMap { h in
-            h.sessions.map { s in
-                SessionItem(host: h.name, wire: s, mood: mood(host: h, s: s), hostOnline: h.status.isUsable, tint: tint(s.cwd))
+    /// Every session, hosts in order, each host's sessions in the user's chosen order.
+    var items: [SessionItem] { itemsByHost().flatMap(\.items) }
+
+    func itemsByHost() -> [(host: HostState, items: [SessionItem])] {
+        let rank = Dictionary(prefs.itemOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: min)
+        return hosts.map { h in
+            let items = h.sessions.map {
+                SessionItem(host: h.name, wire: $0, mood: mood(host: h, s: $0), hostOnline: h.status.isUsable, tint: tint($0.cwd))
             }
+            // Stable: unranked projects (and sessions sharing a project) keep their arrival order.
+            let sorted = items.enumerated().sorted { a, b in
+                let ra = rank[a.element.orderKey] ?? .max, rb = rank[b.element.orderKey] ?? .max
+                return ra != rb ? ra < rb : a.offset < b.offset
+            }.map(\.element)
+            return (h, sorted)
         }
     }
 
-    func itemsByHost() -> [(host: HostState, items: [SessionItem])] {
-        hosts.map { h in
-            (h, h.sessions.map {
-                SessionItem(host: h.name, wire: $0, mood: mood(host: h, s: $0), hostOnline: h.status.isUsable, tint: tint($0.cwd))
-            })
-        }
+    /// Record a host group's new order (keys in display order). Other hosts' keys are kept.
+    func setOrder(_ keys: [String]) {
+        var seen = Set<String>()
+        let unique = keys.filter { seen.insert($0).inserted }
+        let kept = prefs.itemOrder.filter { !seen.contains($0) }
+        prefs.itemOrder = Array((kept + unique).suffix(300))   // bounded: stale projects age out
     }
 
     var attentionCount: Int {

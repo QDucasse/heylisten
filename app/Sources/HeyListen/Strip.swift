@@ -38,6 +38,21 @@ final class StripController: ObservableObject {
     private var hosting: NSHostingView<AnyView>!
     private var cancellables: Set<AnyCancellable> = []
     private var dragOrigin: NSPoint?
+    /// What the current drag does, decided where it starts: on an avatar it reorders, elsewhere it
+    /// moves the widget (or nothing, when locked).
+    private enum DragMode { case none, move, reorder, ignore }
+    private var dragMode: DragMode = .none
+    /// Avatars' layout frames (SwiftUI global coordinates), reported by each ItemView.
+    var itemFrames: [String: CGRect] = [:]
+    let reorder = ReorderState()
+    private struct ReorderContext {
+        let id: String
+        let ids: [String]            // the host group, in display order at drag start
+        let keys: [String: String]   // id -> orderKey
+        let index: Int
+        var target: Int
+    }
+    private var reorderCtx: ReorderContext?
     /// True while dragging and briefly after, so the mouse-up of a drag that started on an avatar
     /// doesn't count as a click.
     private(set) var suppressClicks = false
@@ -108,32 +123,104 @@ final class StripController: ObservableObject {
         return NSRect(x: o.x.rounded(), y: o.y.rounded(), width: r.width, height: r.height)
     }
 
-    // MARK: moving (grip)
+    // MARK: dragging: move the widget, or reorder avatars
 
-    func dragChanged() {
-        guard !Store.shared.prefs.stripPinned else { return }
-        suppressClicks = true
-        hover(nil, frameInPanel: .zero)
-        let m = NSEvent.mouseLocation
-        if dragOrigin == nil { dragOrigin = NSPoint(x: m.x - panel.frame.minX, y: m.y - panel.frame.minY) }
-        guard let d = dragOrigin else { return }
-        panel.setFrameOrigin(NSPoint(x: (m.x - d.x).rounded(), y: (m.y - d.y).rounded()))
+    func dragChanged(_ v: DragGesture.Value) {
+        if dragMode == .none {
+            suppressClicks = true
+            hover(nil, frameInPanel: .zero)
+            if let id = itemFrames.first(where: { $0.value.contains(v.startLocation) })?.key, beginReorder(id) {
+                dragMode = .reorder
+            } else {
+                dragMode = Store.shared.prefs.stripPinned ? .ignore : .move
+            }
+        }
+        switch dragMode {
+        case .move:
+            let m = NSEvent.mouseLocation
+            if dragOrigin == nil { dragOrigin = NSPoint(x: m.x - panel.frame.minX, y: m.y - panel.frame.minY) }
+            guard let d = dragOrigin else { return }
+            panel.setFrameOrigin(NSPoint(x: (m.x - d.x).rounded(), y: (m.y - d.y).rounded()))
+        case .reorder:
+            updateReorder(v.translation)
+        case .none, .ignore:
+            break
+        }
     }
 
     func dragEnded() {
-        guard !Store.shared.prefs.stripPinned else { return }
-        dragOrigin = nil
+        let mode = dragMode
+        dragMode = .none
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.suppressClicks = false }
-        let f = clampToScreen(panel.frame)
-        anchor = NSPoint(x: f.minX, y: f.maxY)
-        UserDefaults.standard.set(NSStringFromPoint(anchor), forKey: "stripAnchor")
-        layout()
+        switch mode {
+        case .move:
+            dragOrigin = nil
+            let f = clampToScreen(panel.frame)
+            anchor = NSPoint(x: f.minX, y: f.maxY)
+            UserDefaults.standard.set(NSStringFromPoint(anchor), forKey: "stripAnchor")
+            layout()
+        case .reorder:
+            endReorder()
+        case .none, .ignore:
+            break
+        }
+    }
+
+    /// Start reordering within the avatar's host group (a lone avatar has nothing to swap with, so
+    /// dragging it moves the widget instead).
+    private func beginReorder(_ id: String) -> Bool {
+        guard let g = Store.shared.itemsByHost().first(where: { $0.items.contains { $0.id == id } }),
+              g.items.count > 1, let i = g.items.firstIndex(where: { $0.id == id }) else { return false }
+        reorderCtx = ReorderContext(id: id, ids: g.items.map(\.id),
+                                    keys: Dictionary(g.items.map { ($0.id, $0.orderKey) }, uniquingKeysWith: { a, _ in a }),
+                                    index: i, target: i)
+        reorder.draggingID = id
+        reorder.offset = 0
+        reorder.shifts = [:]
+        return true
+    }
+
+    /// The dragged avatar follows the mouse along the strip's axis; the others slide aside, animated,
+    /// to open the slot it would drop into. The real order only changes on drop.
+    private func updateReorder(_ t: CGSize) {
+        guard var ctx = reorderCtx, let f = itemFrames[ctx.id] else { return }
+        let vertical = Store.shared.prefs.stripVertical
+        let d = vertical ? t.height : t.width
+        reorder.offset = d
+        let mid = { (r: CGRect) in vertical ? r.midY : r.midX }
+        let others = ctx.ids.filter { $0 != ctx.id }
+        let center = mid(f) + d
+        let target = others.filter { o in itemFrames[o].map { mid($0) < center } ?? false }.count
+        guard target != ctx.target else { return }
+        ctx.target = target
+        reorderCtx = ctx
+        let step = (vertical ? f.height : f.width) + StripLayout.itemSpacing
+        var shifts: [String: CGFloat] = [:]
+        for (k, o) in others.enumerated() {
+            let j = k < ctx.index ? k : k + 1   // original position
+            if j > ctx.index && k < target { shifts[o] = -step }
+            if j < ctx.index && k >= target { shifts[o] = step }
+        }
+        withAnimation(.easeOut(duration: 0.15)) { reorder.shifts = shifts }
+    }
+
+    private func endReorder() {
+        guard let ctx = reorderCtx else { return }
+        reorderCtx = nil
+        var ids = ctx.ids.filter { $0 != ctx.id }
+        ids.insert(ctx.id, at: min(ctx.target, ids.count))
+        withAnimation(.easeOut(duration: 0.15)) {
+            if ctx.target != ctx.index { Store.shared.setOrder(ids.compactMap { ctx.keys[$0] }) }
+            reorder.draggingID = nil
+            reorder.offset = 0
+            reorder.shifts = [:]
+        }
     }
 
     // MARK: hover card
 
     func hover(_ item: SessionItem?, frameInPanel: CGRect) {
-        guard let item, dragOrigin == nil else {
+        guard let item, dragMode == .none else {
             hoverPanel.orderOut(nil)
             return
         }
@@ -166,6 +253,16 @@ final class StripController: ObservableObject {
     }
 }
 
+/// Live drag-to-reorder state the avatars render from.
+@MainActor
+final class ReorderState: ObservableObject {
+    @Published var draggingID: String?
+    /// The dragged avatar's displacement along the strip's axis.
+    @Published var offset: CGFloat = 0
+    /// Other avatars' displacement while they make room.
+    @Published var shifts: [String: CGFloat] = [:]
+}
+
 // MARK: - Views
 
 struct StripView: View {
@@ -184,7 +281,7 @@ struct StripView: View {
                     let items = stack(vertical) {
                         ForEach(g.items) { item in
                             ItemView(item: item, showName: prefs.showNames, scale: prefs.avatarSize == "mini" ? 2 : 3,   // whole-number scales: 48 pt / 32 pt
-                                     controller: controller)
+                                     vertical: vertical, controller: controller, reorder: controller.reorder)
                         }
                     }
                     if g.host.isLocal {
@@ -212,9 +309,9 @@ struct StripView: View {
                     .strokeBorder(Color.primary.opacity(0.08)))
         )
         .fixedSize()
-        // Drag from anywhere (background, bar, or an avatar) to move the widget.
+        // Drag an avatar to reorder it within its host; drag anywhere else to move the widget.
         .simultaneousGesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
-            .onChanged { _ in controller.dragChanged() }
+            .onChanged { controller.dragChanged($0) }
             .onEnded { _ in controller.dragEnded() })
     }
 
@@ -347,9 +444,13 @@ struct ItemView: View {
     let showName: Bool
     /// Passed in (not read from a global) so SwiftUI re-renders when the avatar size changes.
     let scale: CGFloat
+    let vertical: Bool
     let controller: StripController
+    @ObservedObject var reorder: ReorderState
 
     var body: some View {
+        let dragging = reorder.draggingID == item.id
+        let o = dragging ? reorder.offset : (reorder.shifts[item.id] ?? 0)
         Button { if !controller.suppressClicks { Jumper.jump(item) } } label: {
             HStack(spacing: 6) {
                 AvatarView(item: item, scale: scale)
@@ -373,14 +474,24 @@ struct ItemView: View {
         .buttonStyle(.plain)
         // Measure our frame (behind the button), but take hover on the button itself: a view behind
         // the button never receives hover events.
+        // Layout frame, measured before the reorder offset so drags compare slots, not positions.
         .background(GeometryReader { geo in
             Color.clear
-                .onAppear { frame = geo.frame(in: .global) }
-                .onChange(of: geo.frame(in: .global)) { _, f in frame = f }
+                .onAppear { setFrame(geo.frame(in: .global)) }
+                .onChange(of: geo.frame(in: .global)) { _, f in setFrame(f) }
+                .onDisappear { controller.itemFrames[item.id] = nil }
         })
         .onHover { inside in
             controller.hover(inside ? item : nil, frameInPanel: frame)
         }
+        .offset(x: vertical ? 0 : o, y: vertical ? o : 0)
+        .zIndex(dragging ? 1 : 0)
+        .opacity(dragging ? 0.85 : 1)
+    }
+
+    private func setFrame(_ f: CGRect) {
+        frame = f
+        controller.itemFrames[item.id] = f
     }
 
     @State private var frame: CGRect = .zero
