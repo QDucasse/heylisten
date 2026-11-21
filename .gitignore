@@ -1,0 +1,9 @@
+build/
+app/.build/
+art/out/
+art/out_overlays/
+.DS_Store
+
+# kept local, not versioned
+HEYLISTEN.md
+art/README.md
