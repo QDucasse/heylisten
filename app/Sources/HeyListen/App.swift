@@ -11,7 +11,7 @@ struct HeyListenApp: App {
         MenuBarExtra {
             MenuContent(store: store, prefs: store.prefs)
         } label: {
-            MenuLabel(count: store.attentionCount)
+            MenuLabel()
         }
         .menuBarExtraStyle(.menu)
     }
@@ -58,14 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 struct MenuLabel: View {
-    let count: Int
     var body: some View {
-        HStack(spacing: 2) {
-            // Always show something: the app has no Dock icon, so an empty (zero-width) status
-            // item would leave no way to reach the menu, e.g. when run without bundled sprites.
-            if let img = menuIcon { Image(nsImage: img) } else { Image(systemName: "sparkle") }
-            if count > 0 { Text("\(count)") }
-        }
+        // Always show something: the app has no Dock icon, so an empty (zero-width) status
+        // item would leave no way to reach the menu, e.g. when run without bundled sprites.
+        if let img = menuIcon { Image(nsImage: img) } else { Image(systemName: "sparkle") }
     }
 
     /// Fairy silhouette ("Hey! Listen!") as a template image, so macOS tints it for the menu bar.
@@ -102,13 +98,6 @@ struct MenuContent: View {
             Text("Mini").tag("mini")
         }
         Toggle("Open sessions in a new desktop", isOn: $prefs.newDesktop)
-        Menu("Notifications") {
-            Toggle("Needs permission", isOn: $prefs.notifyPermission)
-            Toggle("Turn finished", isOn: $prefs.notifyReply)
-            Divider()
-            Toggle("Sound: permission", isOn: $prefs.soundPermission)
-            Toggle("Sound: turn finished", isOn: $prefs.soundReply)
-        }
         Menu("Hosts") {
             ForEach(store.hosts) { h in
                 Button("\(h.name): \(h.status.label)  (\(h.sessions.count))") { store.reconnect(h.name) }

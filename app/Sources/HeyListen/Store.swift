@@ -7,10 +7,6 @@ final class Prefs: ObservableObject {
     private let d = UserDefaults.standard
 
     @Published var remoteHosts: [String] { didSet { d.set(remoteHosts, forKey: "remoteHosts") } }
-    @Published var notifyPermission: Bool { didSet { d.set(notifyPermission, forKey: "notifyPermission") } }
-    @Published var notifyReply: Bool { didSet { d.set(notifyReply, forKey: "notifyReply") } }
-    @Published var soundPermission: Bool { didSet { d.set(soundPermission, forKey: "soundPermission") } }
-    @Published var soundReply: Bool { didSet { d.set(soundReply, forKey: "soundReply") } }
     @Published var newDesktop: Bool { didSet { d.set(newDesktop, forKey: "newDesktop") } }
     @Published var stripVisible: Bool { didSet { d.set(stripVisible, forKey: "stripVisible") } }
     @Published var stripVertical: Bool { didSet { d.set(stripVertical, forKey: "stripVertical") } }
@@ -25,16 +21,10 @@ final class Prefs: ObservableObject {
     init() {
         d.register(defaults: [
             "remoteHosts": [String](),
-            "notifyPermission": true, "notifyReply": true,
-            "soundPermission": true, "soundReply": false,
             "newDesktop": true, "stripVisible": true,
             "stripVertical": true, "showNames": false, "stripPinned": false, "avatarSize": "normal",
         ])
         remoteHosts = d.stringArray(forKey: "remoteHosts") ?? []
-        notifyPermission = d.bool(forKey: "notifyPermission")
-        notifyReply = d.bool(forKey: "notifyReply")
-        soundPermission = d.bool(forKey: "soundPermission")
-        soundReply = d.bool(forKey: "soundReply")
         newDesktop = d.bool(forKey: "newDesktop")
         stripVisible = d.bool(forKey: "stripVisible")
         stripVertical = d.bool(forKey: "stripVertical")
@@ -176,10 +166,6 @@ final class Store: ObservableObject {
         prefs.itemOrder = Array((kept + unique).suffix(300))   // bounded: stale projects age out
     }
 
-    var attentionCount: Int {
-        items.filter { $0.mood == .permission || $0.mood == .reply }.count
-    }
-
     private func key(_ host: String, _ s: WireSession) -> String {
         "\(host)|\(s.sessionId.isEmpty ? String(s.pid) : s.sessionId)"
     }
@@ -216,15 +202,14 @@ final class Store: ObservableObject {
             notified.insert(nkey)
             if seedOnly { continue }
             let item = SessionItem(host: host, wire: s, mood: mood(host: h, s: s), hostOnline: true, tint: tint(s.cwd))
-            let wanted = a.state == "permission" ? prefs.notifyPermission : prefs.notifyReply
-            guard wanted else { continue }
             Task { @MainActor in
                 let inFront = await self.isInFront(item)
                 if inFront {
                     if a.state == "reply" { self.acknowledge(item) }
                     return
                 }
-                Notifier.shared.post(item: item, sound: a.state == "permission" ? self.prefs.soundPermission : self.prefs.soundReply)
+                // Sound only for permission: a finished turn can wait, a blocked one can't.
+                Notifier.shared.post(item: item, sound: a.state == "permission")
             }
         }
         if notified.count > 2000 { notified.removeAll() }
