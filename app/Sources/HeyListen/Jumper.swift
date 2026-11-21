@@ -117,7 +117,9 @@ enum Jumper {
         // window open with the error instead of a silent blank window.
         return """
         ssh -t -o ClearAllForwardings=yes -o ConnectTimeout=10 \(shellQuote(item.host)) \(shellQuote(tmux)) || {
-          echo; echo "heylisten: could not attach to \(t.session) on \(item.host) (exit $?)"; exec zsh -l; }
+          rc=$?; echo
+          printf 'heylisten: could not attach to %s on %s (exit %s)\\n' \(shellQuote(t.session)) \(shellQuote(item.host)) "$rc"
+          exec zsh -l; }
         """
     }
 
