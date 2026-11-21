@@ -319,9 +319,10 @@ struct ItemView: View {
         let state: String
         switch item.mood {
         case .busy: state = "working"
-        case .idle: state = "idle"
+        case .idle: state = "parked (not open)"
         case .permission: state = "needs permission"
-        case .reply: state = "waiting for you"
+        case .reply: state = "just finished"
+        case .waiting: state = "waiting for you"
         case .offline: state = "offline"
         }
         return item.isLocal ? state : "\(state) · \(item.host)"
@@ -355,9 +356,10 @@ struct HoverCard: View {
     private var stateText: String {
         switch item.mood {
         case .busy: return "working"
-        case .idle: return "idle"
+        case .idle: return "parked: not open in any terminal"
         case .permission: return "needs permission"
-        case .reply: return "waiting for your reply"
+        case .reply: return "turn finished, not seen yet"
+        case .waiting: return "waiting for your next message"
         case .offline: return "host offline"
         }
     }

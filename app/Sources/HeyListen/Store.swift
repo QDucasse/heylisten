@@ -174,8 +174,17 @@ final class Store: ObservableObject {
         if !h.status.isUsable { return .offline }
         if s.attention?.state == "permission" { return .permission }
         if s.status == "busy" { return .busy }
+        guard isOpen(host: h, s: s) else { return .idle }
         if let a = s.attention, a.state == "reply", a.ts > (acked[key(h.name, s)] ?? 0) { return .reply }
-        return .idle
+        return .waiting
+    }
+
+    /// Open = some tmux client is attached to the session (any terminal, any machine). Sessions
+    /// outside tmux count as open: a local one lives in a terminal tab, and for a remote one we
+    /// can't tell, so we'd rather show ? than a possibly wrong zzz.
+    private func isOpen(host h: HostState, s: WireSession) -> Bool {
+        guard let t = s.tmux else { return true }
+        return (h.tmux?.sessions.first { $0.name == t.session }?.attached ?? 0) > 0
     }
 
     func acknowledge(_ item: SessionItem) {

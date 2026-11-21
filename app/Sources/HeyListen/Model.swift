@@ -97,8 +97,15 @@ struct HostState: Identifiable {
 
 let localHostName = "local"
 
+/// What an avatar shows. Two questions are kept apart: is Claude waiting on you, and is the
+/// session open anywhere (a tmux client attached)?
 enum Mood: Equatable {
-    case busy, idle, permission, reply, offline
+    case busy        // working
+    case permission  // blocked on a permission prompt (shown even when detached: it stops the work)
+    case reply       // open, idle, turn just finished and not seen yet  -> pulsing ?
+    case waiting     // open, idle, already seen                         -> steady ?
+    case idle        // not open anywhere (no tmux client attached)      -> sleeping + zzz
+    case offline     // host unreachable
 }
 
 struct SessionItem: Identifiable, Equatable {

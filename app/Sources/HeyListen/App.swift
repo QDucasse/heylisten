@@ -120,6 +120,7 @@ struct MenuContent: View {
         switch m {
         case .permission: return "❗"
         case .reply: return "💬"
+        case .waiting: return "💭"
         case .busy: return "⚙︎"
         case .idle: return "💤"
         case .offline: return "🔌"

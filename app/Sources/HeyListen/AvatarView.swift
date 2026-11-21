@@ -26,7 +26,7 @@ struct AvatarView: View {
 
     private var face: String {
         switch item.mood {
-        case .busy, .reply: return "mascot_awake"
+        case .busy, .reply, .waiting: return "mascot_awake"
         case .permission: return "mascot_alarmed"
         case .idle, .offline: return "mascot_sleeping"
         }
@@ -35,7 +35,7 @@ struct AvatarView: View {
     private var overlay: String? {
         switch item.mood {
         case .permission: return "excl"
-        case .reply: return "question"
+        case .reply, .waiting: return "question"
         case .idle: return "zzz"
         case .offline: return "unplugged"
         case .busy: return nil
@@ -67,7 +67,8 @@ struct AvatarView: View {
                 if let overlay {
                     // Two-frame badge animation: <id> / <id>_b.
                     let period = item.mood == .permission ? 0.36 : 0.7
-                    let alt = Int((t / period).rounded(.down)) % 2 == 1
+                    // A seen "?" (waiting) stays still; everything else alternates its two frames.
+                    let alt = item.mood != .waiting && Int((t / period).rounded(.down)) % 2 == 1
                     sprite(alt ? overlay + "_b" : overlay)
                         .frame(width: Sprites.overlayPixels * overlayScale, height: Sprites.overlayPixels * overlayScale)
                         .offset(x: 2, y: 0)
@@ -122,6 +123,8 @@ struct AvatarView: View {
             m.dx = [0, 1, 0, -1, 0, 0][step]
         case .reply:
             m.glow = 0.5 + 0.5 * sin((t + phase) * 2 * .pi / 1.6)
+        case .waiting:
+            break   // steady: open and already seen
         case .offline:
             m.opacity = 0.5
         }
