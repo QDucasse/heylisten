@@ -94,19 +94,21 @@ final class HostWatcher {
         p.standardError = err
         p.standardInput = FileHandle.nullDevice
 
+        // On EOF, clear the handler *before* anything can return early: a handler left installed
+        // on a closed pipe is called again forever (e.g. after reconnect frees this watcher).
         out.fileHandleForReading.readabilityHandler = { [weak self] fh in
             let d = fh.availableData
-            guard let self else { return }
+            if d.isEmpty { fh.readabilityHandler = nil; return }
+            guard let self else { fh.readabilityHandler = nil; return }
             self.queue.async {
-                guard gen == self.generation else { return }
-                if d.isEmpty { fh.readabilityHandler = nil; return }
+                guard gen == self.generation else { fh.readabilityHandler = nil; return }
                 self.consume(d)
             }
         }
         err.fileHandleForReading.readabilityHandler = { [weak self] fh in
             let d = fh.availableData
-            guard let self else { return }
             if d.isEmpty { fh.readabilityHandler = nil; return }
+            guard let self else { fh.readabilityHandler = nil; return }
             self.queue.async {
                 let s = String(decoding: d, as: UTF8.self)
                 self.stderrTail = String((self.stderrTail + s).suffix(400))
