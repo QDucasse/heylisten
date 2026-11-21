@@ -4,8 +4,6 @@ import SwiftUI
 /// Sprite PNGs bundled in Contents/Resources/sprites (rendered by art/render.py at scale 1).
 enum Sprites {
     static let avatarPixels: CGFloat = 16   // art/tiles grid size
-    /// Rows of the 16x16 tile actually covered by the mascot (rows 3..12).
-    static let mascotRows: ClosedRange<Int> = 3...12
     static let overlayPixels: CGFloat = 9   // art/overlays grid size
 
     private static var cache: [String: NSImage] = [:]

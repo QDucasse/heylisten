@@ -2,6 +2,7 @@ build/
 app/.build/
 art/out/
 art/out_overlays/
+art/out_icon/
 .DS_Store
 
 # kept local, not versioned

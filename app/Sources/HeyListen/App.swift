@@ -49,17 +49,13 @@ struct MenuLabel: View {
         }
     }
 
+    /// Fairy silhouette ("Hey! Listen!") as a template image, so macOS tints it for the menu bar.
+    /// 16x16 sprite drawn at exactly 1x: whole-number scale keeps the pixels crisp.
     private var menuIcon: NSImage? {
-        guard let base = Sprites.image("mascot_awake_mask") else { return nil }
-        // Crop to the mascot's rows (16 x 10 px) and draw at exactly 1x: an integer scale keeps pixels
-        // square and the eyes symmetric (a fractional scale makes some pixel columns wider than others).
-        let rows = Sprites.mascotRows
-        let px = base.size.width / Sprites.avatarPixels
-        let src = NSRect(x: 0, y: (Sprites.avatarPixels - CGFloat(rows.upperBound) - 1) * px,
-                         width: base.size.width, height: CGFloat(rows.count) * px)
-        let img = NSImage(size: NSSize(width: 16, height: CGFloat(rows.count)), flipped: false) { r in
+        guard let base = Sprites.image("fairy_menu") else { return nil }
+        let img = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { r in
             NSGraphicsContext.current?.imageInterpolation = .none
-            base.draw(in: r, from: src, operation: .sourceOver, fraction: 1)
+            base.draw(in: r)
             return true
         }
         img.isTemplate = true

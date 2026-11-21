@@ -20,6 +20,26 @@ python3 -I "$root/art/render.py" render "$root/art/tiles" "$tmp/tiles" --split -
 python3 -I "$root/art/render.py" render "$root/art/overlays" "$tmp/overlays" --scale 1 >/dev/null
 cp "$tmp"/tiles/*_mask.png "$tmp"/tiles/*_detail.png "$app/Contents/Resources/sprites/"
 for f in "$tmp"/overlays/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f" "$app/Contents/Resources/sprites/"; done
+# Menu bar icon (template silhouette) and app icon (.icns from the 32x32 fairy at every size).
+python3 -I "$root/art/render.py" render "$root/art/icon/menu" "$tmp/menu" --scale 1 >/dev/null
+cp "$tmp/menu/fairy_menu.png" "$app/Contents/Resources/sprites/"
+iconset="$tmp/AppIcon.iconset"; mkdir -p "$iconset"
+for s in 1 2 4 8 16 32; do   # 32, 64, 128, 256, 512, 1024 px (whole-number scales keep pixels crisp)
+  python3 -I "$root/art/render.py" render "$root/art/icon/app" "$tmp/icon$s" --scale $s >/dev/null
+done
+cp "$tmp/icon1/fairy_app.png"  "$iconset/icon_32x32.png"
+cp "$tmp/icon1/fairy_app.png"  "$iconset/icon_16x16@2x.png"
+cp "$tmp/icon2/fairy_app.png"  "$iconset/icon_32x32@2x.png"
+cp "$tmp/icon4/fairy_app.png"  "$iconset/icon_128x128.png"
+cp "$tmp/icon8/fairy_app.png"  "$iconset/icon_128x128@2x.png"
+cp "$tmp/icon8/fairy_app.png"  "$iconset/icon_256x256.png"
+cp "$tmp/icon16/fairy_app.png" "$iconset/icon_256x256@2x.png"
+cp "$tmp/icon16/fairy_app.png" "$iconset/icon_512x512.png"
+cp "$tmp/icon32/fairy_app.png" "$iconset/icon_512x512@2x.png"
+# 16 px gets its own hand-drawn tile: halving the 32 px art would blur it.
+python3 -I "$root/art/render.py" render "$root/art/icon/app16" "$tmp/icon16px" --scale 1 >/dev/null
+cp "$tmp/icon16px/fairy_app16.png" "$iconset/icon_16x16.png"
+iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
 rm -rf "$tmp"
 
 cat > "$app/Contents/Info.plist" <<'PLIST'
@@ -31,6 +51,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>heylisten</string>
   <key>CFBundleDisplayName</key><string>heylisten</string>
   <key>CFBundleExecutable</key><string>HeyListen</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>

@@ -1,0 +1,22 @@
+# fairy_app16: 16x16 fairy on a dark rounded square (16 px app icon slot)
+D=#141824
+c=#fff8ef
+o=#ffb347
+w=#cfe6ff
+---
+..DDDDDDDDDDDD..
+.wwwDDDDDDDDwww.
+DwwwwDDDDDDwwwwD
+DDwwwwDDDDwwwwDD
+DDDwwwDDDDwwwDDD
+DDDDDDooooDDDDDD
+DDDDDooooooDDDDD
+DDDDDooccooDDDDD
+DDDDDooccooDDDDD
+DDDDDooooooDDDDD
+DDDDDDooooDDDDDD
+DDDwwwDDDDwwwDDD
+DDwwwwDDDDwwwwDD
+DDwwwDDDDDDwwwDD
+.DDDDDDDDDDDDDD.
+..DDDDDDDDDDDD..
