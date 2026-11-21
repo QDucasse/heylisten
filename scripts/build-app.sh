@@ -16,16 +16,22 @@ cp "$bin" "$app/Contents/MacOS/HeyListen"
 
 # Sprites at scale 1 (mask/detail layers for the tinted avatar, plain PNGs for overlays).
 tmp="$(mktemp -d)"
-python3 -I "$root/art/render.py" render "$root/art/tiles" "$tmp/tiles" --split --scale 1 >/dev/null
-python3 -I "$root/art/render.py" render "$root/art/overlays" "$tmp/overlays" --scale 1 >/dev/null
+trap 'rm -rf "$tmp"' EXIT   # also on failure
+# render.py reports problems on stdout: stay quiet on success, show them (and stop) on failure.
+render() {
+  local out
+  out="$(python3 -I "$root/art/render.py" render "$@" 2>&1)" || { echo "$out" >&2; echo "art render failed: $1" >&2; exit 1; }
+}
+render "$root/art/tiles" "$tmp/tiles" --split --scale 1
+render "$root/art/overlays" "$tmp/overlays" --scale 1
 cp "$tmp"/tiles/*_mask.png "$tmp"/tiles/*_detail.png "$app/Contents/Resources/sprites/"
 for f in "$tmp"/overlays/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f" "$app/Contents/Resources/sprites/"; done
 # Menu bar icon (template silhouette) and app icon (.icns from the 32x32 fairy at every size).
-python3 -I "$root/art/render.py" render "$root/art/icon/menu" "$tmp/menu" --scale 1 >/dev/null
+render "$root/art/icon/menu" "$tmp/menu" --scale 1
 cp "$tmp/menu/fairy_menu.png" "$app/Contents/Resources/sprites/"
 iconset="$tmp/AppIcon.iconset"; mkdir -p "$iconset"
 for s in 1 2 4 8 16 32; do   # 32, 64, 128, 256, 512, 1024 px (whole-number scales keep pixels crisp)
-  python3 -I "$root/art/render.py" render "$root/art/icon/app" "$tmp/icon$s" --scale $s >/dev/null
+  render "$root/art/icon/app" "$tmp/icon$s" --scale $s
 done
 cp "$tmp/icon1/fairy_app.png"  "$iconset/icon_32x32.png"
 cp "$tmp/icon1/fairy_app.png"  "$iconset/icon_16x16@2x.png"
@@ -37,10 +43,9 @@ cp "$tmp/icon16/fairy_app.png" "$iconset/icon_256x256@2x.png"
 cp "$tmp/icon16/fairy_app.png" "$iconset/icon_512x512.png"
 cp "$tmp/icon32/fairy_app.png" "$iconset/icon_512x512@2x.png"
 # 16 px gets its own hand-drawn tile: halving the 32 px art would blur it.
-python3 -I "$root/art/render.py" render "$root/art/icon/app16" "$tmp/icon16px" --scale 1 >/dev/null
+render "$root/art/icon/app16" "$tmp/icon16px" --scale 1
 cp "$tmp/icon16px/fairy_app16.png" "$iconset/icon_16x16.png"
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
-rm -rf "$tmp"
 
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
