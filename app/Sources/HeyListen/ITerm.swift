@@ -31,11 +31,14 @@ func runProcess(_ exe: String, _ args: [String], timeout: TimeInterval = 20) asy
         @Sendable func finish(_ code: Int32, _ s: String) {
             if once.claim() { cont.resume(returning: (code, s)) }
         }
-        p.terminationHandler = { proc in
-            let d = out.fileHandleForReading.readDataToEndOfFile()
-            finish(proc.terminationStatus, String(decoding: d, as: UTF8.self))
-        }
         do { try p.run() } catch { finish(-1, ""); return }
+        // Drain stdout while the process runs: reading only after exit deadlocks once the output
+        // exceeds the pipe buffer (~64 KB), because the child blocks on write and never exits.
+        DispatchQueue.global().async {
+            let d = out.fileHandleForReading.readDataToEndOfFile()   // returns at EOF
+            p.waitUntilExit()
+            finish(p.terminationStatus, String(decoding: d, as: UTF8.self))
+        }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
             if p.isRunning { p.terminate() }
         }
