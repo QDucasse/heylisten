@@ -137,7 +137,8 @@ def cmd_check(d):
     sizes = {t["size"] for t in tiles.values()}
     seen = {}
     for tid, t in tiles.items():
-        key = "\n".join(t["grid"])
+        # identical image = same grid *and* same colours (a recoloured variant is not a duplicate)
+        key = "\n".join(t["grid"]) + repr(sorted(t["palette"].items()))
         if key in seen:
             errs.setdefault(tid, []).append(f"duplicate of {seen[key]}")
         else:
