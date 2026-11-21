@@ -190,13 +190,7 @@ struct StripView: View {
                     if g.host.isLocal {
                         items
                     } else {
-                        // Remote hosts sit in a subtle tray instead of a text header; the host name is
-                        // in the names line and the hover card.
-                        items
-                            .padding(3)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.primary.opacity(g.host.status.isUsable ? 0.07 : 0.03)))
-                            .help("\(g.host.name): \(g.host.status.label)")
+                        HostSection(host: g.host, vertical: vertical) { items }
                     }
                 }
             }
@@ -240,6 +234,72 @@ struct StripView: View {
         } else {
             HStack(alignment: .center, spacing: StripLayout.itemSpacing) { c() }
         }
+    }
+}
+
+/// A remote host's group: a rule along its leading edge with the host's name and connection dot.
+/// Vertical strip: rule on top, name below it. Horizontal strip: rule on the left, name rotated
+/// to read bottom-to-top beside it, so it costs a text line's height rather than its width.
+struct HostSection<Content: View>: View {
+    let host: HostState
+    let vertical: Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Group {
+            if vertical {
+                VStack(alignment: .leading, spacing: 4) { label; content() }
+                    .padding(.top, 5)
+            } else {
+                HStack(alignment: .center, spacing: 4) {
+                    Rotated90 { label.rotationEffect(.degrees(-90)) }
+                    content()
+                }
+                .padding(.leading, 5)
+            }
+        }
+        // Drawn as an edge of the section (like the toggle separator) so it spans it exactly.
+        .overlay(alignment: vertical ? .top : .leading) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.18))
+                .frame(width: vertical ? nil : 1, height: vertical ? 1 : nil)
+        }
+        .help("\(host.name): \(host.status.label)")
+    }
+
+    private var label: some View {
+        HStack(spacing: 3) {
+            Circle().fill(dotColor).frame(width: 5, height: 5)
+            Text(host.name.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .fixedSize()
+    }
+
+    private var dotColor: Color {
+        switch host.status {
+        case .online: return .green
+        case .connecting, .outdated: return .orange
+        case .offline, .notInstalled: return .gray
+        }
+    }
+}
+
+/// Lays out its single child rotated a quarter turn: reports the child's size with width and
+/// height swapped (rotationEffect alone only changes how it's drawn, not the space it takes).
+struct Rotated90: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let s = subviews.first?.sizeThatFits(.unspecified) else { return .zero }
+        return CGSize(width: s.height, height: s.width)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let v = subviews.first else { return }
+        let s = v.sizeThatFits(.unspecified)
+        v.place(at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center,
+                proposal: ProposedViewSize(width: s.width, height: s.height))
     }
 }
 
@@ -335,7 +395,7 @@ struct ItemView: View {
         case .waiting: state = "waiting for you"
         case .offline: state = "offline"
         }
-        return item.isLocal ? state : "\(state) · \(item.host)"
+        return state   // the host is in the section header
     }
 }
 
