@@ -121,6 +121,7 @@ final class Store: ObservableObject {
             case "hello":
                 let v = m.version ?? 0
                 hosts[i].status = v < expectedWatcherVersion ? .outdated(v) : .online
+                if let t = m.time { hosts[i].clockOffset = Date().timeIntervalSince1970 - t }
             case "snapshot":
                 if !hosts[i].status.isUsable { hosts[i].status = .online }
                 hosts[i].sessions = m.sessions ?? []
@@ -147,7 +148,8 @@ final class Store: ObservableObject {
         let rank = Dictionary(prefs.itemOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: min)
         return hosts.map { h in
             let items = h.sessions.map {
-                SessionItem(host: h.name, wire: $0, mood: mood(host: h, s: $0), hostOnline: h.status.isUsable, tint: tint($0.cwd))
+                SessionItem(host: h.name, wire: $0, mood: mood(host: h, s: $0), hostOnline: h.status.isUsable, tint: tint($0.cwd),
+                            clockOffset: h.clockOffset)
             }
             // Stable: unranked projects (and sessions sharing a project) keep their arrival order.
             let sorted = items.enumerated().sorted { a, b in
@@ -202,7 +204,8 @@ final class Store: ObservableObject {
             if notified.contains(nkey) { continue }
             notified.insert(nkey)
             if seedOnly { continue }
-            let item = SessionItem(host: host, wire: s, mood: mood(host: h, s: s), hostOnline: true, tint: tint(s.cwd))
+            let item = SessionItem(host: host, wire: s, mood: mood(host: h, s: s), hostOnline: true, tint: tint(s.cwd),
+                                   clockOffset: h.clockOffset)
             Task { @MainActor in
                 let inFront = await self.isInFront(item)
                 if inFront {

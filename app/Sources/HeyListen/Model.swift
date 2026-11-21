@@ -33,6 +33,9 @@ struct WireSession: Codable, Hashable {
     var compacting: Bool?      // a compaction is running
     var subagents: Int?        // subagents running right now
     var longTurn: Bool?        // busy for over 10 minutes
+    var model: String?         // model of the last turn
+    var lastTurn: Double?      // when the last turn ended (host clock, unix seconds)
+    var cacheTtl: Double?      // prompt cache lifetime (s)
 }
 
 struct WireClient: Codable, Hashable {
@@ -59,6 +62,7 @@ struct WireMessage: Decodable {
     var type: String
     var version: Int?
     var host: String?
+    var time: Double?          // hello: the host's clock
     var sessions: [WireSession]?
     var tmux: WireTmux?
 }
@@ -96,6 +100,9 @@ struct HostState: Identifiable {
     var sessions: [WireSession] = []
     var tmux: WireTmux?
     var seededNotifications = false
+    /// Local clock minus the host's (from hello; includes the connection latency, which is fine
+    /// for minute-level times).
+    var clockOffset: Double = 0
     var id: String { name }
     var isLocal: Bool { name == localHostName }
 }
@@ -138,6 +145,11 @@ struct SessionItem: Identifiable, Equatable {
     let hostOnline: Bool
     /// Index into Tint.palette, assigned by the Store so visible projects don't share a colour.
     let tint: Int
+    var clockOffset: Double = 0
+
+    /// When the last turn ended and when its prompt cache expires, on the local clock.
+    var lastTurnDate: Date? { wire.lastTurn.map { Date(timeIntervalSince1970: $0 + clockOffset) } }
+    var cacheExpiry: Date? { lastTurnDate.map { $0.addingTimeInterval(wire.cacheTtl ?? 3600) } }
 
     var id: String { "\(host)|\(wire.sessionId.isEmpty ? String(wire.pid) : wire.sessionId)" }
     var isLocal: Bool { host == localHostName }

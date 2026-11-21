@@ -187,6 +187,11 @@ def snapshot():
             "compacting": compacting,
             "subagents": agents,
             "longTurn": long_turn,
+            # For the hover card, which counts from these itself (so snapshots don't change
+            # every second).
+            "model": ctx.get("model") or None,
+            "lastTurn": ts if isinstance(ts, (int, float)) else None,
+            "cacheTtl": ttl,
         })
     ttys = ttys_for([s["pid"] for s in sessions])
     for s in sessions:
@@ -203,7 +208,8 @@ def main():
     if "--version" in sys.argv:
         print(VERSION)
         return
-    hello = {"type": "hello", "version": VERSION, "host": socket.gethostname()}
+    # time: lets the app correct for this host's clock when it counts from lastTurn.
+    hello = {"type": "hello", "version": VERSION, "host": socket.gethostname(), "time": time.time()}
     if "--once" in sys.argv:
         emit(hello)
         emit(snapshot())

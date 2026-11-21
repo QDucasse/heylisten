@@ -5,8 +5,8 @@ Registered for Notification, Stop, StopFailure, UserPromptSubmit, PostToolUse, S
 SessionStart (matcher "compact"), PreCompact, SubagentStart and SubagentStop. Writes, in
 ~/.claude/heylisten/:
   <sid>.json             {"state": "permission"|"reply"|"error", ...}: Claude is waiting on you
-  <sid>.ctx.json         {"tokens": N, "ttl": S, "ts": T}: context size and prompt-cache lifetime
-                         at the end of the last turn, read from the transcript
+  <sid>.ctx.json         {"tokens": N, "ttl": S, "model": M, "ts": T}: context size, prompt-cache
+                         lifetime and model at the end of the last turn, read from the transcript
   <sid>.compacting.json  {"ts": T}: a compaction is running
   <sid>.turn.json        {"ts": T}: when the running turn started (UserPromptSubmit)
   <sid>.agent.<id>.json  {"type": ..., "ts": T}: one per running subagent
@@ -60,7 +60,7 @@ def write_marker(path, data):
 
 
 def context_usage(transcript):
-    """(tokens, cache ttl in seconds) as of the last main-thread API call. Tokens: its input plus
+    """(tokens, cache ttl in seconds, model) as of the last main-thread API call. Tokens: its input plus
     cached input. TTL: 300 if the latest cache write went to the 5-minute cache, else 3600 (a
     turn that only read the cache doesn't say; the 1-hour cache is the default).
     Reads only the transcript's tail (it can be many MB)."""
@@ -70,8 +70,8 @@ def context_usage(transcript):
             f.seek(max(0, f.tell() - 512 * 1024))
             lines = f.read().decode("utf-8", "replace").splitlines()
     except Exception:
-        return None
-    tokens = ttl = None
+        return None, None, None
+    tokens = ttl = model = None
     for line in reversed(lines):
         if '"usage"' not in line:
             continue
@@ -87,12 +87,13 @@ def context_usage(transcript):
                     ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
             if n > 0:   # synthetic messages (errors, interrupts) carry zero usage
                 tokens = n
+                model = (d.get("message") or {}).get("model")
         cc = u.get("cache_creation") or {}
         if ttl is None and (cc.get("ephemeral_1h_input_tokens") or cc.get("ephemeral_5m_input_tokens")):
             ttl = 3600 if cc.get("ephemeral_1h_input_tokens") else 300
         if tokens is not None and ttl is not None:
             break
-    return tokens, ttl or 3600
+    return tokens, ttl or 3600, model
 
 
 def remove(path):
@@ -158,9 +159,9 @@ def main():
         mark("reply", "Turn finished")
         remove(compacting_path)
         remove(turn_path)
-        tokens, ttl = context_usage(ev.get("transcript_path") or "")
+        tokens, ttl, model = context_usage(ev.get("transcript_path") or "")
         if tokens:
-            write_marker(ctx_path, {"tokens": tokens, "ttl": ttl, "ts": now})
+            write_marker(ctx_path, {"tokens": tokens, "ttl": ttl, "model": model or "", "ts": now})
     elif name == "StopFailure":
         err = ev.get("error") or ""
         mark("error", ERRORS.get(err) or err.replace("_", " ") or "API error")

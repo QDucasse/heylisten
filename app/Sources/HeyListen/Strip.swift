@@ -527,7 +527,20 @@ struct HoverCard: View {
             if let t = item.wire.contextTokens {
                 row("context", "\(t / 1000)k of \(ContextLevel.window / 1000)k (\(t * 100 / ContextLevel.window)%)")
             }
-            if item.cacheCold { row("cache", "expired: the next message re-reads the context") }
+            if let m = item.wire.model, !m.isEmpty { row("model", m) }
+            // Times count down live while the card is open.
+            TimelineView(.periodic(from: .now, by: 1)) { tl in
+                VStack(alignment: .leading, spacing: 3) {
+                    if item.mood != .busy, let d = item.lastTurnDate {
+                        row("last turn", "ended \(Self.ago(tl.date.timeIntervalSince(d)))")
+                    }
+                    if item.cacheCold {
+                        row("cache", "expired: the next message re-reads the context")
+                    } else if item.mood != .busy, let e = item.cacheExpiry, e > tl.date {
+                        row("cache", "warm, \(Self.span(e.timeIntervalSince(tl.date))) left")
+                    }
+                }
+            }
             if item.wire.compacting == true { row("context", "compacting…") }
             if let n = item.wire.subagents, n > 0 { row("subagents", "\(n) running") }
             if item.wire.longTurn == true { row("turn", "running for over 10 min") }
@@ -541,6 +554,16 @@ struct HoverCard: View {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.regularMaterial))
         .fixedSize()
     }
+
+    /// "3 min", "1 h 05 min", "40 s".
+    static func span(_ t: TimeInterval) -> String {
+        let s = max(0, Int(t))
+        if s < 60 { return "\(s) s" }
+        if s < 3600 { return "\(s / 60) min" }
+        return String(format: "%d h %02d min", s / 3600, s % 3600 / 60)
+    }
+
+    static func ago(_ t: TimeInterval) -> String { t < 60 ? "just now" : "\(span(t)) ago" }
 
     private var stateText: String {
         switch item.mood {
