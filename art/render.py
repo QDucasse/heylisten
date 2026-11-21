@@ -49,14 +49,12 @@ def parse_tile(path):
                 ch, hexv = s[0], s[2:].split()[0]
                 if ch == ".":
                     errors.append(f"line {ln}: '.' is reserved for background")
-                elif not (len(hexv) == 7 and hexv[0] == "#"):
-                    errors.append(f"line {ln}: bad colour {hexv!r}")
+                elif not (len(hexv) == 7 and hexv[0] == "#"
+                          and all(c in "0123456789abcdefABCDEF" for c in hexv[1:])):
+                    # strict: int(x, 16) would also accept "0x12", "-1234", "+1234", "12_34"
+                    errors.append(f"line {ln}: bad colour {hexv!r} (want #rrggbb)")
                 else:
-                    try:
-                        int(hexv[1:], 16)
-                        palette[ch] = hexv
-                    except ValueError:
-                        errors.append(f"line {ln}: bad colour {hexv!r}")
+                    palette[ch] = hexv
                 continue
             errors.append(f"line {ln}: unexpected header line {s!r}")
         else:
