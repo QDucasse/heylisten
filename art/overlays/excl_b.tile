@@ -1,0 +1,14 @@
+# excl_b: red ! in a white disc (blink frame)
+k=#1f1a17
+r=#e5484d
+w=#ffffff
+---
+..kkkkk..
+.kwwrwwk.
+kwwwrwwwk
+kwwwrwwwk
+kwwwrwwwk
+kwwwwwwwk
+kwwwrwwwk
+.kwwwwwk.
+..kkkkk..
