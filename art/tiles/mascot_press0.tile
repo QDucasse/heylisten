@@ -1,4 +1,4 @@
-# mascot_dizzy3: Claude Code welcome mascot, square spiral eyes, frame 4/4 (context filling up)
+# mascot_press0: Claude Code welcome mascot, eyes squeezed shut, squashed by 0 row(s) (compacting)
 k=#1f1a17
 B=#d97757
 ---
@@ -7,10 +7,10 @@ B=#d97757
 ................
 ..BBBBBBBBBBBB..
 ..BBBBBBBBBBBB..
-..BkkkBBBBkkkB..
-..BkBkBBBBkBkB..
-BBBkBBBBBBBBkBBB
-BBBkkkkBBkkkkBBB
+..BBBBBBBBBBBB..
+..BBkkBBBBkkBB..
+BBBBBBBBBBBBBBBB
+BBBBBBBBBBBBBBBB
 ..BBBBBBBBBBBB..
 ..BBBBBBBBBBBB..
 ...B.B....B.B...

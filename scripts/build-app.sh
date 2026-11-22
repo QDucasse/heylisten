@@ -29,6 +29,9 @@ for f in "$tmp"/overlays/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f"
 # Subagent followers: tinted like the mascot, so mask/detail layers.
 render "$root/art/minis" "$tmp/minis" --split --scale 1
 cp "$tmp"/minis/*_mask.png "$tmp"/minis/*_detail.png "$app/Contents/Resources/sprites/"
+# Effects drawn over the mascot tile (snow: cache cold; flame: context filling up).
+render "$root/art/fx" "$tmp/fx" --scale 1
+for f in "$tmp"/fx/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f" "$app/Contents/Resources/sprites/"; done
 # Top-left marks (unread sparkle, long-turn sweat drop).
 render "$root/art/marks" "$tmp/marks" --scale 1
 for f in "$tmp"/marks/*.png; do [ "$(basename "$f")" = sheet.png ] || cp "$f" "$app/Contents/Resources/sprites/"; done

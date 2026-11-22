@@ -51,34 +51,17 @@ def around(offsets):
     return eyes
 FACES["ko"] = around([(-1, -1), (1, -1), (0, 0), (-1, 1), (1, 1)])      # x x
 DESC["ko"] = "X eyes (turn stopped on an API error)"
-FACES["squint"] = around([(-1, -1), (0, 0), (-1, 1)])                    # > <
-DESC["squint"] = "squeezed > < eyes (compacting: chewing on the context)"
 
-# Dizzy (context window filling up): each eye is a 4x4 square spiral over the open eye, the right
-# one mirrored. Four frames turn it a quarter each, so the eyes spin.
-SPIRAL = ["kkkk",
-          "kBBk",
-          "kBkk",
-          "kBBB"]
-def rot(p):   # 90 degrees clockwise
-    return ["".join(p[len(p) - 1 - r][c] for r in range(len(p))) for c in range(len(p[0]))]
-def spiral_eyes(pat):
-    def eyes(to):
-        out = []
-        for ex, flip in ((5, False), (12, True)):
-            x, y = to(ex, 1, 0)
-            for dy, row in enumerate(pat):
-                for dx, ch in enumerate(row[::-1] if flip else row):
-                    if ch == "k":
-                        # 4 wide over the 1px eye: one column out from the face's centre line
-                        out.append((x - (2 if flip else 1) + dx, y + dy))
-        return out
-    return eyes
-pat = SPIRAL
-for i in range(4):
-    FACES[f"dizzy{i}"] = spiral_eyes(pat)
-    DESC[f"dizzy{i}"] = f"square spiral eyes, frame {i + 1}/4 (context filling up)"
-    pat = rot(pat)
+# Compacting: the mascot gets pressed like in a trash compactor. press0 is the full body with shut
+# eyes; press1/press2 drop body rows (top row, then a lower one too) so it squashes down onto its
+# feet.
+SQUASH = {"press0": [], "press1": [3], "press2": [3, 9]}
+
+shut = around([(0, 1), (1, 1)])                                          # - -
+for k, rows in SQUASH.items():
+    FACES[k] = shut
+    DESC[k] = f"eyes squeezed shut, squashed by {len(rows)} row(s) (compacting)"
+
 for name, eyes in FACES.items():
     g, to = body()
     # restore the original eye holes to body first, then draw this expression's eyes
@@ -86,6 +69,8 @@ for name, eyes in FACES.items():
         g[y][x] = "B"
     for (x, y) in eyes(to):
         g[y][x] = "k"
+    drop = SQUASH.get(name, [])
+    g = [["."] * N for _ in drop] + [r for i, r in enumerate(g) if i not in drop]
     with open(os.path.join(here, "..", "tiles", f"mascot_{name}.tile"), "w") as f:
         f.write(f"# mascot_{name}: Claude Code welcome mascot, {DESC[name]}\nk=#1f1a17\nB=#d97757\n---\n")
         f.write("\n".join("".join(r) for r in g) + "\n")

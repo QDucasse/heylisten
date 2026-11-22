@@ -124,8 +124,8 @@ enum Mood: Equatable {
 /// How full a session's context window is, from the token count the Stop hook records.
 enum ContextLevel: Equatable {
     case normal
-    case high   // worth a /compact or /clear soon: spiral eyes
-    case full   // auto-compaction is close: the spirals spin faster
+    case high   // worth a /compact or /clear soon: a flame on the head
+    case full   // auto-compaction is close: a bigger flame
 
     /// Every session runs with the 1M-token context window.
     static let window = 1_000_000

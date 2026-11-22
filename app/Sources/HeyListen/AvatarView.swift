@@ -105,6 +105,8 @@ final class AvatarLayerView: NSView {
     private let detailLayer = CALayer()   // eyes, outline
     private let badgeLayer = CALayer()    // top right: ! ? x zzz unplugged
     private let markLayer = CALayer()     // top left: unseen sparkle, or sweat drop on a long turn
+    private let flameLayer = CALayer()    // on the head (inside bodyLayer): context filling up
+    private let snowLayer = CALayer()     // over the whole tile: prompt cache gone cold
     /// Bottom right: one small mascot per running subagent (container, tinted body, eyes).
     private let followers: [(box: CALayer, mask: CALayer, detail: CALayer)] =
         (0..<maxFollowers).map { _ in (CALayer(), CALayer(), CALayer()) }
@@ -115,13 +117,14 @@ final class AvatarLayerView: NSView {
         layerContentsRedrawPolicy = .never
         bodyLayer.addSublayer(maskLayer)
         bodyLayer.addSublayer(detailLayer)
-        for l in [bodyLayer, badgeLayer, markLayer] { layer!.addSublayer(l) }
+        bodyLayer.addSublayer(flameLayer)
+        for l in [bodyLayer, snowLayer, badgeLayer, markLayer] { layer!.addSublayer(l) }
         for f in followers {
             f.box.addSublayer(f.mask)
             f.box.addSublayer(f.detail)
             layer!.addSublayer(f.box)
         }
-        for l in [maskLayer, detailLayer, badgeLayer, markLayer] + followers.flatMap({ [$0.mask, $0.detail] }) {
+        for l in [maskLayer, detailLayer, flameLayer, snowLayer, badgeLayer, markLayer] + followers.flatMap({ [$0.mask, $0.detail] }) {
             l.magnificationFilter = .nearest
             l.contentsGravity = .resize
         }
@@ -143,36 +146,28 @@ final class AvatarLayerView: NSView {
         let s = c.scale, side = Sprites.avatarPixels * s
         let badge = Sprites.overlayPixels * overlayScale, mark = Sprites.markPixels * 2
         let center = CGPoint(x: side / 2, y: side / 2)
-        let all = [bodyLayer, maskLayer, detailLayer, badgeLayer, markLayer] + followers.flatMap { [$0.box, $0.mask, $0.detail] }
+        let all = [bodyLayer, maskLayer, detailLayer, flameLayer, snowLayer, badgeLayer, markLayer] + followers.flatMap { [$0.box, $0.mask, $0.detail] }
         for l in all { l.removeAllAnimations() }
         bodyLayer.frame = CGRect(x: 0, y: 0, width: side, height: side)
         maskLayer.frame = bodyLayer.bounds
         detailLayer.frame = bodyLayer.bounds
+        flameLayer.frame = bodyLayer.bounds
+        snowLayer.frame = bodyLayer.bounds
         badgeLayer.frame = CGRect(x: side - badge + 2, y: side - badge, width: badge, height: badge)
         markLayer.frame = CGRect(x: -2, y: side - mark, width: mark, height: mark)
 
         let grey = c.mood == .offline
         let phase = Double(Tint.hashIndex(c.id + "#phase") % 1000) / 1000 * 2   // desync avatars
-        // Compacting: squeezed > < eyes and a chewing bob, whatever else it is doing (except when
-        // stuck on you or an error).
-        let chewing = c.compacting && ![.permission, .error, .offline].contains(c.mood)
-        // Context window filling up, or prompt cache gone cold: spinning spiral eyes on an awake
-        // mascot (permission keeps its alarmed face, a parked one keeps sleeping). Faster once
-        // auto-compaction is close.
-        let dizzy = !chewing && (c.context != .normal || c.cacheCold) && [.busy, .reply, .waiting].contains(c.mood)
-        let faces = chewing ? ["mascot_squint"] : dizzy ? (0..<4).map { "mascot_dizzy\($0)" } : [Self.face(c.mood)]
+        // Compacting: pressed like in a trash compactor (squashes down onto its feet, eyes shut,
+        // springs back), whatever else it is doing (except when stuck on you or an error).
+        let pressed = c.compacting && ![.permission, .error, .offline].contains(c.mood)
+        let face = pressed ? "mascot_press0" : Self.face(c.mood)
         let tinted = { (face: String, shimmer: Double) in Sprites.tinted("\(face)_mask", Self.bodyColor(c.tint, shimmer), grey: grey) as Any }
         let detail = { (face: String) in Sprites.tinted("\(face)_detail", nil, grey: grey) as Any }
-        maskLayer.contents = tinted(faces[0], 0)
-        detailLayer.contents = detail(faces[0])
+        maskLayer.contents = tinted(face, 0)
+        detailLayer.contents = detail(face)
         bodyLayer.opacity = c.mood == .offline ? 0.5 : 1
         let shimmer: [Double] = [0, 1, 0.5, 0]   // busy: a brightness wave over the body
-        if dizzy {
-            let step = c.context == .full ? 0.12 : 0.25
-            let wave = c.mood == .busy ? shimmer : [0, 0, 0, 0]
-            animate(maskLayer, "contents", zip(faces, wave).map(tinted), step: step, phase: phase)
-            animate(detailLayer, "contents", faces.map(detail), step: step, phase: phase)
-        }
 
         if let o = Self.overlay(c.mood) {
             badgeLayer.isHidden = false
@@ -181,6 +176,23 @@ final class AvatarLayerView: NSView {
             animate(badgeLayer, "contents", [Sprites.cgImage(o) as Any, Sprites.cgImage(o + "_b") as Any], step: period)
         } else {
             badgeLayer.isHidden = true
+        }
+
+        // Context window filling up: a flame on the head, bigger and flickering faster once
+        // auto-compaction is close (not while compacting: that is what puts it out).
+        let flame = c.mood == .offline || pressed ? nil : c.context == .full ? "flame_l" : c.context == .high ? "flame_s" : nil
+        flameLayer.isHidden = flame == nil
+        if let f = flame {
+            flameLayer.contents = Sprites.cgImage(f)
+            animate(flameLayer, "contents", [Sprites.cgImage(f) as Any, Sprites.cgImage(f + "_b") as Any], step: f == "flame_l" ? 0.15 : 0.3)
+        }
+        // Prompt cache gone cold (the next message re-reads it all): snow falling over the mascot.
+        let snowing = c.cacheCold && c.mood != .offline
+        snowLayer.isHidden = !snowing
+        if snowing {
+            let flakes = (0..<8).map { Sprites.cgImage("snow\($0)") as Any }
+            snowLayer.contents = flakes[0]
+            animate(snowLayer, "contents", flakes, step: 0.3, phase: phase)
         }
 
         // Top-left mark, in the empty rows above the mascot. Unread: turn finished and not seen
@@ -215,15 +227,17 @@ final class AvatarLayerView: NSView {
         }
 
         let at = { (dx: CGFloat, dy: CGFloat) in NSValue(point: CGPoint(x: center.x + dx * s, y: center.y + dy * s)) }
-        if chewing {
-            // Chew: two quick dips, a pause.
-            animate(bodyLayer, "position", [0, -1, 0, -1, 0, 0].map { at(0, $0) }, step: 0.15, phase: phase)
+        if pressed {
+            // Press: squash down over a few frames, hold, spring back, rest.
+            let frames = [0, 1, 2, 2, 2, 1, 0, 0].map { "mascot_press\($0)" }
+            animate(maskLayer, "contents", frames.map { tinted($0, 0) }, step: 0.12, phase: phase)
+            animate(detailLayer, "contents", frames.map(detail), step: 0.12, phase: phase)
             return
         }
         switch c.mood {
         case .busy:
             animate(bodyLayer, "position", [0, 1, 0, 0].map { at(0, $0) }, step: 0.25, phase: phase)
-            if !dizzy { animate(maskLayer, "contents", shimmer.map { tinted(faces[0], $0) }, step: 0.25, phase: phase) }
+            animate(maskLayer, "contents", shimmer.map { tinted(face, $0) }, step: 0.25, phase: phase)
         case .idle:
             // Slow breathing, stepped at 4 Hz like the rest.
             let values = (0..<16).map { 0.62 + 0.13 * sin(Double($0) * 0.25 * 2 * .pi / 4) }
