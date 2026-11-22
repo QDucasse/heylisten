@@ -44,7 +44,7 @@ final class Store: ObservableObject {
     /// sessionKey -> attention ts that the user has already seen (reply markers only).
     @Published private(set) var acked: [String: Double] = [:]
     /// Snapshot of what's currently in front in iTerm (refreshed while iTerm is frontmost).
-    private(set) var front: ITerm.FrontSession?
+    private(set) var front: TerminalSession?
 
     /// cwd -> palette slot, persisted so projects keep their colour across restarts.
     private var tints: [String: Int] = (UserDefaults.standard.dictionary(forKey: "tintSlots") as? [String: Int]) ?? [:]
@@ -213,7 +213,7 @@ final class Store: ObservableObject {
                     return
                 }
                 // Sound only when the work is stuck: a finished turn can wait, a blocked one can't.
-                Notifier.shared.post(item: item, sound: a.state != "reply")
+                Platform.alerts.notify(Alert(item: item, sound: a.state != "reply"), item: item)
             }
         }
         if notified.count > 2000 { notified.removeAll() }
@@ -222,13 +222,12 @@ final class Store: ObservableObject {
     // MARK: "in front" detection
 
     func isInFront(_ item: SessionItem) async -> Bool {
-        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ITerm.bundleID else { return false }
-        guard let f = await ITerm.frontSession() else { return false }
+        guard let f = await Platform.terminal.frontSession() else { return false }
         front = f
         return matchesFront(item, f)
     }
 
-    private func matchesFront(_ item: SessionItem, _ f: ITerm.FrontSession) -> Bool {
+    private func matchesFront(_ item: SessionItem, _ f: TerminalSession) -> Bool {
         guard let host = hosts.first(where: { $0.name == item.host }) else { return false }
         if item.isLocal {
             if let t = item.wire.tmux {
@@ -236,16 +235,15 @@ final class Store: ObservableObject {
             }
             return item.wire.tty == f.tty
         }
-        guard let t = item.wire.tmux, Jumper.taggedSession(host: item.host, tmuxSession: t.session) == f.uniqueID else {
+        guard let t = item.wire.tmux, Jumper.taggedSession(host: item.host, tmuxSession: t.session) == f.id else {
             return false
         }
         return host.tmux?.sessions.contains { $0.name == t.session && $0.pane == t.pane } ?? false
     }
 
     private func refreshFront() {
-        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ITerm.bundleID else { return }
         Task { @MainActor in
-            guard let f = await ITerm.frontSession() else { return }
+            guard let f = await Platform.terminal.frontSession() else { return }
             self.front = f
             for item in self.items where item.mood == .reply && self.matchesFront(item, f) {
                 self.acknowledge(item)

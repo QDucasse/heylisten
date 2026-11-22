@@ -2,7 +2,8 @@ import AppKit
 import Foundation
 
 /// "Take me to that session": focus it if it is open somewhere, else build a workspace
-/// (new desktop, tmux on the left, VS Code on the right).
+/// (new desktop, tmux on the left, the editor on the right). This decides what to do; the
+/// platform backends (Platform.swift) do it.
 @MainActor
 enum Jumper {
     private static let tagKey = "itermTags"   // "host|tmuxSession" -> iTerm session unique id
@@ -24,20 +25,20 @@ enum Jumper {
     private static func jumpAsync(_ item: SessionItem) async {
         let store = Store.shared
         store.acknowledge(item)
-        guard item.jumpable else { NSSound.beep(); return }
+        guard item.jumpable else { Platform.alerts.beep(); return }
         let host = store.hosts.first { $0.name == item.host }
 
         if item.isLocal {
             if let t = item.wire.tmux {
                 if let c = host?.tmux?.clients.first(where: { $0.session == t.session }),
-                   await ITerm.focus(tty: c.tty) {
+                   await Platform.terminal.focus(tty: c.tty) {
                     await selectPane(item, t)
                     await ensureEditor(item)
                     return
                 }
             } else {
-                if let tty = item.wire.tty, await ITerm.focus(tty: tty) { await ensureEditor(item); return }
-                NSSound.beep()   // local session outside tmux and not in an iTerm tab we can see
+                if let tty = item.wire.tty, await Platform.terminal.focus(tty: tty) { await ensureEditor(item); return }
+                Platform.alerts.beep()   // local session outside tmux and not in a terminal we can see
                 return
             }
         } else if let t = item.wire.tmux {
@@ -45,7 +46,7 @@ enum Jumper {
             if attached > 0 {
                 // 1. A window we know about (opened by us, or found earlier).
                 if let id = taggedSession(host: item.host, tmuxSession: t.session),
-                   await ITerm.focus(uniqueID: id) {
+                   await Platform.terminal.focus(session: id) {
                     await selectPane(item, t)
                     await ensureEditor(item)
                     return
@@ -53,7 +54,7 @@ enum Jumper {
                 // 2. Discover a window the user attached themselves, then remember it.
                 if let id = await discoverRemoteWindow(item, t) {
                     tag(host: item.host, tmuxSession: t.session, id: id)
-                    _ = await ITerm.focus(uniqueID: id)
+                    _ = await Platform.terminal.focus(session: id)
                     await selectPane(item, t)
                     await ensureEditor(item)
                     return
@@ -63,16 +64,17 @@ enum Jumper {
         await openWorkspace(item)
     }
 
-    /// After focusing an existing terminal: if no VS Code window shows this project, open one and
-    /// tile terminal (left) + editor (right) on the current desktop, then give focus back to iTerm.
+    /// After focusing an existing terminal: if no editor window shows this project, open one and
+    /// tile terminal + editor on the current desktop, then give focus back to the terminal.
     private static func ensureEditor(_ item: SessionItem) async {
-        guard let open = await VSCode.hasWindow(for: item) else { return }
-        hlog("jump: vscode window for \(item.project)@\(item.host): \(open ? "present" : "missing")")
-        guard !open, let wid = await ITerm.currentWindowID(), let sid = await ITerm.frontSession() else { return }
-        let (left, right) = Spaces.halves()
-        await ITerm.setBounds(windowID: wid, rect: left)
-        await VSCode.open(item: item, frame: right)
-        _ = await ITerm.focus(uniqueID: sid.uniqueID)
+        let p = Platform.self
+        guard let open = await p.editor.hasWindow(for: item) else { return }
+        hlog("jump: editor window for \(item.project)@\(item.host): \(open ? "present" : "missing")")
+        guard !open, let wid = await p.terminal.currentWindow(), let sid = await p.terminal.frontSession() else { return }
+        let tiles = p.workspace.tiles()
+        await p.terminal.place(window: wid, frame: tiles.terminal)
+        await p.editor.open(item, frame: tiles.editor)
+        _ = await p.terminal.focus(session: sid.id)
     }
 
     private static func ssh(_ host: String, _ cmd: String) async {
@@ -89,7 +91,7 @@ enum Jumper {
         await ssh(item.host, "tmux set-option -t \(s) set-titles on \\; set-option -t \(s) set-titles-string \(shellQuote(marker)) && \(refresh)")
         var found: String?
         for _ in 0..<10 {
-            if let id = await ITerm.session(withTitle: marker) { found = id; break }
+            if let id = await Platform.terminal.session(titled: marker) { found = id; break }
             try? await Task.sleep(nanoseconds: 150_000_000)
         }
         // Restore: show the pane title, then drop our session-level overrides (global settings win again).
@@ -124,20 +126,20 @@ enum Jumper {
     }
 
     private static func openWorkspace(_ item: SessionItem) async {
-        guard let cmd = attachCommand(item), let t = item.wire.tmux else { NSSound.beep(); return }
+        let p = Platform.self
+        guard let cmd = attachCommand(item), let t = item.wire.tmux else { p.alerts.beep(); return }
         if Store.shared.prefs.newDesktop {
-            let ok = await Spaces.createDesktopAndSwitch()
+            let ok = await p.workspace.newWorkspace()
             if !ok { hlog("jump: new desktop failed, tiling on current desktop") }
         }
-        guard let win = await ITerm.newWindow(running: cmd) else { NSSound.beep(); return }
-        tag(host: item.host, tmuxSession: t.session, id: win.sessionID)
+        guard let win = await p.terminal.open(running: cmd, for: item) else { p.alerts.beep(); return }
+        tag(host: item.host, tmuxSession: t.session, id: win.session)
 
-        if !AX.trusted { AX.promptForTrust() }
-        let (left, right) = Spaces.halves()
-        await ITerm.setBounds(windowID: win.windowID, rect: left)
-        await VSCode.open(item: item, frame: right)
+        let tiles = p.workspace.tiles()
+        await p.terminal.place(window: win.window, frame: tiles.terminal)
+        await p.editor.open(item, frame: tiles.editor)
         // Bring the terminal back in front: that's where Claude is waiting.
-        _ = await ITerm.focus(uniqueID: win.sessionID)
+        _ = await p.terminal.focus(session: win.session)
     }
 }
 

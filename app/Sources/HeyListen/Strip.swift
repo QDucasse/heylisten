@@ -524,8 +524,8 @@ struct HoverCard: View {
             row("host", item.host)
             if let t = item.wire.tmux { row("tmux", "\(t.session) \(t.window) \(t.pane)") }
             row("state", stateText)
-            if let t = item.wire.contextTokens {
-                row("context", "\(t / 1000)k of \(ContextLevel.window / 1000)k (\(t * 100 / ContextLevel.window)%)")
+            if let t = item.wire.contextTokens, let w = item.wire.contextWindow, w > 0 {
+                row("context", "\(t / 1000)k of \(w / 1000)k (\(t * 100 / w)%)")
             }
             if let m = item.wire.model, !m.isEmpty { row("model", m) }
             // Times count down live while the card is open.

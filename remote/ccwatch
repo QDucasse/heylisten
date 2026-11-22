@@ -2,7 +2,9 @@
 """ccwatch: stream Claude Code session state as JSON lines (heylisten watcher).
 
 Reads ~/.claude/sessions/*.json (written by Claude Code), ~/.claude/heylisten/*.json
-(written by hook.py) and tmux clients/sessions; prints a full snapshot line whenever
+(written by hook.py) and tmux clients/sessions, and decides each session's states (context
+level, cold cache, long turn...) so every frontend shows the same thing. Thresholds can be
+overridden in ~/.config/heylisten/config.json (see SETTINGS); prints a full snapshot line whenever
 something changes, plus a heartbeat every 15 s. Python 3 standard library only.
 
     ccwatch            stream forever
@@ -23,9 +25,28 @@ SESSIONS_DIR = os.path.join(HOME, ".claude", "sessions")
 MARKER_DIR = os.environ.get("HEYLISTEN_DIR", os.path.join(HOME, ".claude", "heylisten"))
 INTERVAL = 1.0
 HEARTBEAT = 15.0
-LONG_TURN = 600          # busy this long (s): a long turn
-COMPACT_STALE = 600      # a compaction marker older than this was left behind (failed compaction)
-AGENT_STALE = 3 * 3600   # same for a subagent that never reported stopping
+# Defaults; any of these keys in ~/.config/heylisten/config.json ($XDG_CONFIG_HOME) wins.
+SETTINGS = {
+    "contextWindow": 1_000_000,   # tokens
+    "contextHigh": 0.6,           # fraction of the window: "high" (worth a /compact soon)
+    "contextFull": 0.8,           # "full" (auto-compaction is close)
+    "cacheTtl": 3600,             # prompt cache lifetime (s) when the transcript doesn't say
+    "longTurn": 600,              # busy this long (s): a long turn
+    "compactStale": 600,          # a compaction marker older than this was left behind
+    "agentStale": 3 * 3600,       # same for a subagent that never reported stopping
+}
+CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"),
+                      "heylisten", "config.json")
+
+
+def settings():
+    """SETTINGS overridden by the config file (re-read every snapshot: edits apply live)."""
+    s = dict(SETTINGS)
+    user = load_json(CONFIG)
+    if isinstance(user, dict):
+        s.update({k: v for k, v in user.items()
+                  if k in SETTINGS and isinstance(v, (int, float)) and not isinstance(v, bool)})
+    return s
 
 EXTRA_PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
 
@@ -123,6 +144,7 @@ def parse_tmux_field(v):
 def snapshot():
     sessions = []
     now = time.time()
+    cfg = settings()
     try:
         markers = os.listdir(MARKER_DIR)
     except Exception:
@@ -163,16 +185,18 @@ def snapshot():
         status = d.get("status") or "idle"
         # Prompt cache gone cold: idle for longer than its TTL since the last turn ended, so the
         # next message re-sends the whole context. (While busy the turn keeps it warm.)
-        ts, ttl = ctx.get("ts"), ctx.get("ttl") or 3600
+        ts, ttl = ctx.get("ts"), ctx.get("ttl") or cfg["cacheTtl"]
         cold = status != "busy" and isinstance(ts, (int, float)) and now - ts > ttl
         stem = mname[:-len(".json")] if mname else None
-        compacting = bool(stem) and fresh(stem + ".compacting.json", COMPACT_STALE)
+        compacting = bool(stem) and fresh(stem + ".compacting.json", cfg["compactStale"])
         agents = sum(1 for n in markers if stem and n.startswith(stem + ".agent.") and n.endswith(".json")
-                     and fresh(n, AGENT_STALE))
+                     and fresh(n, cfg["agentStale"]))
         # Turn start from the hook (the sessions file's statusUpdatedAt also moves mid-turn).
         turn = load_json(os.path.join(MARKER_DIR, stem + ".turn.json")) if stem else None
         since = turn.get("ts") if isinstance(turn, dict) else None
-        long_turn = status == "busy" and isinstance(since, (int, float)) and now - since > LONG_TURN
+        long_turn = status == "busy" and isinstance(since, (int, float)) and now - since > cfg["longTurn"]
+        frac = tokens / cfg["contextWindow"] if isinstance(tokens, int) else 0
+        level = "full" if frac >= cfg["contextFull"] else "high" if frac >= cfg["contextHigh"] else "normal"
         sessions.append({
             "pid": pid,
             "sessionId": sid,
@@ -183,6 +207,8 @@ def snapshot():
             "tmux": parse_tmux_field(d.get("tmux")),
             "attention": attention,
             "contextTokens": tokens if isinstance(tokens, int) else None,
+            "contextWindow": cfg["contextWindow"],
+            "contextLevel": level,
             "cacheCold": cold,
             "compacting": compacting,
             "subagents": agents,

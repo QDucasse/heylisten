@@ -29,6 +29,8 @@ struct WireSession: Codable, Hashable {
     var attention: WireAttention?
     var tty: String?
     var contextTokens: Int?    // context size after the last turn (nil: unknown, e.g. just compacted)
+    var contextWindow: Int?    // tokens
+    var contextLevel: String?  // "normal" | "high" | "full"
     var cacheCold: Bool?       // idle past the prompt cache TTL: the next message re-reads it all
     var compacting: Bool?      // a compaction is running
     var subagents: Int?        // subagents running right now
@@ -121,21 +123,11 @@ enum Mood: Equatable {
     case offline     // host unreachable
 }
 
-/// How full a session's context window is, from the token count the Stop hook records.
-enum ContextLevel: Equatable {
+/// How full a session's context window is (decided by ccwatch, from its thresholds).
+enum ContextLevel: String, Equatable {
     case normal
     case high   // worth a /compact or /clear soon: a flame on the head
     case full   // auto-compaction is close: a bigger flame
-
-    /// Every session runs with the 1M-token context window.
-    static let window = 1_000_000
-    static let highFraction = 0.6
-    static let fullFraction = 0.8
-
-    init(tokens: Int?) {
-        let f = Double(tokens ?? 0) / Double(Self.window)
-        self = f >= Self.fullFraction ? .full : f >= Self.highFraction ? .high : .normal
-    }
 }
 
 struct SessionItem: Identifiable, Equatable {
@@ -159,7 +151,7 @@ struct SessionItem: Identifiable, Equatable {
         let p = (wire.cwd as NSString).lastPathComponent
         return p.isEmpty ? wire.name : p
     }
-    var context: ContextLevel { ContextLevel(tokens: wire.contextTokens) }
+    var context: ContextLevel { wire.contextLevel.flatMap(ContextLevel.init(rawValue:)) ?? .normal }
     var cacheCold: Bool { wire.cacheCold ?? false }
     /// Remote sessions outside tmux cannot be reached.
     var jumpable: Bool { isLocal || wire.tmux != nil }

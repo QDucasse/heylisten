@@ -11,26 +11,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         c.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
-    @MainActor
-    func post(item: SessionItem, sound: Bool) {
+    func post(_ a: Alert) {
         let c = UNMutableNotificationContent()
-        let where_ = item.isLocal ? "" : " · \(item.host)"
-        let state = item.wire.attention?.state
-        let permission = state == "permission"
-        let msg = item.wire.attention?.message ?? ""
-        c.subtitle = "\(item.wire.name)\(where_)"
-        if state == "error" {
-            c.title = "\(item.project) stopped"
-            c.body = "The turn ended on an API error: \(msg.isEmpty ? "unknown" : msg)."
-        } else {
-            c.title = permission ? "\(item.project) needs permission" : "\(item.project) is waiting for you"
-            c.body = msg.isEmpty || msg == "Turn finished" ? (permission ? "Claude is asking to continue." : "Turn finished.") : msg
-        }
-        if sound { c.sound = .default }
-        c.userInfo = ["key": item.id]
-        c.threadIdentifier = item.id
-        let req = UNNotificationRequest(identifier: "\(item.id)|\(item.wire.attention?.ts ?? 0)", content: c, trigger: nil)
-        UNUserNotificationCenter.current().add(req)
+        c.title = a.title
+        c.subtitle = a.subtitle
+        c.body = a.body
+        if a.sound { c.sound = .default }
+        c.userInfo = ["key": a.key]
+        c.threadIdentifier = a.key
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: a.id, content: c, trigger: nil))
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,

@@ -13,9 +13,9 @@ private final class ResumeOnce: @unchecked Sendable {
     }
 }
 
-/// Runs a process asynchronously and returns (exit code, stdout).
+/// Runs a process asynchronously and returns (exit code, stdout). `stdin` is written to it, if given.
 @discardableResult
-func runProcess(_ exe: String, _ args: [String], timeout: TimeInterval = 20) async -> (Int32, String) {
+func runProcess(_ exe: String, _ args: [String], timeout: TimeInterval = 20, stdin: Data? = nil) async -> (Int32, String) {
     await withCheckedContinuation { cont in
         let p = Process()
         p.executableURL = URL(fileURLWithPath: exe)
@@ -26,12 +26,20 @@ func runProcess(_ exe: String, _ args: [String], timeout: TimeInterval = 20) asy
         let out = Pipe()
         p.standardOutput = out
         p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
+        let input = stdin.map { _ in Pipe() }
+        p.standardInput = input ?? FileHandle.nullDevice
         let once = ResumeOnce()
         @Sendable func finish(_ code: Int32, _ s: String) {
             if once.claim() { cont.resume(returning: (code, s)) }
         }
         do { try p.run() } catch { finish(-1, ""); return }
+        if let input, let stdin {
+            // Off the caller's thread: a large write blocks until the child reads it.
+            DispatchQueue.global().async {
+                try? input.fileHandleForWriting.write(contentsOf: stdin)
+                try? input.fileHandleForWriting.close()
+            }
+        }
         // Drain stdout while the process runs: reading only after exit deadlocks once the output
         // exceeds the pipe buffer (~64 KB), because the child blocks on write and never exits.
         DispatchQueue.global().async {
@@ -56,7 +64,8 @@ func appleScriptString(_ s: String) -> String {
     "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
 }
 
-/// iTerm2 control via AppleScript. All terminal-specific code lives here.
+/// iTerm2 control via AppleScript. All terminal-specific code lives here (used through
+/// ITermTerminal, MacPlatform.swift).
 enum ITerm {
     static let bundleID = "com.googlecode.iterm2"
 
