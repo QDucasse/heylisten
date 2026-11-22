@@ -1,9 +1,12 @@
 # sweat_b: sweat drop one row lower (drip frame)
+k=#8a817c
 b=#7cc6ff
 w=#ffffff
 ---
-.....
-..b..
-.bbb.
-bwbbb
-.bbb.
+.......
+...k...
+..kbk..
+.kbbbk.
+kbwbbbk
+.kbbbk.
+..kkk..

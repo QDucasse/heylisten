@@ -114,8 +114,24 @@ err = [
 write("error", "red x on a dark disc: the turn stopped on an API error", {**K, "d": "#3a3330", "r": "#e5484d"}, err)
 write("error_b", "white x on a dark disc (blink frame)", {**K, "d": "#3a3330", "r": "#ffffff"}, err)
 
-# --- unread mark (top-left of "just finished, not seen yet" avatars): 5x5 sparkle, two frames ---
+def outline4(rows):
+    """Pad by 1px and ring the shape with 'k' (4-neighbour: corners stay open, a lighter line)."""
+    w = len(rows[0]) + 2
+    g = [["."] * w] + [["."] + list(r) + ["."] for r in rows] + [["."] * w]
+    src = [r[:] for r in g]
+    for y in range(w):
+        for x in range(w):
+            if src[y][x] == "." and any(0 <= y + j < w and 0 <= x + i < w and src[y + j][x + i] != "."
+                                        for j, i in ((0, 1), (0, -1), (1, 0), (-1, 0))):
+                g[y][x] = "k"
+    return ["".join(r) for r in g]
+
+# --- top-left marks: 5x5 art ringed with a dark outline (7x7), so they read on the strip's light
+# and dark materials alike. Two frames each. ---
+MARK_OUTLINE = "#8a817c"   # warm mid grey: softer than the badges' near-black, still reads on both
 def write_mark(name, desc, rows, pal={"w": "#ffffff", "y": "#ffd23f"}, folder="marks"):
+    if folder == "marks":
+        rows, pal = outline4(rows), {"k": MARK_OUTLINE, **pal}
     assert len(rows) == len(rows[0]) and all(len(r) == len(rows[0]) for r in rows), name
     d = os.path.join(here, "..", folder)
     os.makedirs(d, exist_ok=True)
@@ -123,18 +139,18 @@ def write_mark(name, desc, rows, pal={"w": "#ffffff", "y": "#ffd23f"}, folder="m
         f.write(f"# {name}: {desc}\n" + "".join(f"{k}={v}\n" for k, v in pal.items())
                 + "---\n" + "\n".join(rows) + "\n")
 
-write_mark("unread", "white sparkle with a yellow heart: new, not seen yet", [
-    "..w..",
-    "..w..",
-    "wwyww",
-    "..w..",
-    "..w..",
+write_mark("unread", "gold sparkle with a white heart: new, not seen yet", [
+    "..y..",
+    "..y..",
+    "yywyy",
+    "..y..",
+    "..y..",
 ])
 write_mark("unread_b", "small sparkle (twinkle frame)", [
     ".....",
-    "..w..",
-    ".wyw.",
-    "..w..",
+    "..y..",
+    ".ywy.",
+    "..y..",
     ".....",
 ])
 

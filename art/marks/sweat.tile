@@ -1,9 +1,12 @@
 # sweat: light-blue sweat drop: a long turn
+k=#8a817c
 b=#7cc6ff
 w=#ffffff
 ---
-..b..
-.bbb.
-bwbbb
-bbbbb
-.bbb.
+...k...
+..kbk..
+.kbbbk.
+kbwbbbk
+kbbbbbk
+.kbbbk.
+..kkk..

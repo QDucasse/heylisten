@@ -1,9 +1,12 @@
-# unread: white sparkle with a yellow heart: new, not seen yet
+# unread: gold sparkle with a white heart: new, not seen yet
+k=#8a817c
 w=#ffffff
 y=#ffd23f
 ---
-..w..
-..w..
-wwyww
-..w..
-..w..
+...k...
+..kyk..
+.kkykk.
+kyywyyk
+.kkykk.
+..kyk..
+...k...

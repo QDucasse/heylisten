@@ -6,7 +6,7 @@ import SwiftUI
 enum Sprites {
     static let avatarPixels: CGFloat = 16   // art/tiles grid size
     static let overlayPixels: CGFloat = 9   // art/overlays grid size
-    static let markPixels: CGFloat = 5      // art/marks grid size (unread sparkle, sweat drop)
+    static let markPixels: CGFloat = 7      // art/marks grid size (unread sparkle, sweat drop; outlined)
     static let miniPixels: CGFloat = 7      // art/minis grid size (subagent followers)
 
     private static var cache: [String: NSImage] = [:]
@@ -154,7 +154,7 @@ final class AvatarLayerView: NSView {
         flameLayer.frame = bodyLayer.bounds
         snowLayer.frame = bodyLayer.bounds
         badgeLayer.frame = CGRect(x: side - badge + 2, y: side - badge, width: badge, height: badge)
-        markLayer.frame = CGRect(x: -2, y: side - mark, width: mark, height: mark)
+        markLayer.frame = CGRect(x: -4, y: side - mark + 2, width: mark, height: mark)
 
         let grey = c.mood == .offline
         let phase = Double(Tint.hashIndex(c.id + "#phase") % 1000) / 1000 * 2   // desync avatars
