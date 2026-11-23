@@ -65,7 +65,7 @@ enum Jumper {
     }
 
     /// After focusing an existing terminal: if no editor window shows this project, open one and
-    /// tile terminal + editor on the current desktop, then give focus back to the terminal.
+    /// tile terminal + editor on the current desktop, keeping the terminal in front.
     private static func ensureEditor(_ item: SessionItem) async {
         let p = Platform.self
         guard let open = await p.editor.hasWindow(for: item) else { return }
@@ -75,6 +75,7 @@ enum Jumper {
         await p.terminal.place(window: wid, frame: tiles.terminal)
         await p.editor.open(item, frame: tiles.editor)
         _ = await p.terminal.focus(session: sid.id)
+        await keepInFront(session: sid.id)
     }
 
     private static func ssh(_ host: String, _ cmd: String) async {
@@ -140,6 +141,30 @@ enum Jumper {
         await p.editor.open(item, frame: tiles.editor)
         // Bring the terminal back in front: that's where Claude is waiting.
         _ = await p.terminal.focus(session: win.session)
+        await keepInFront(session: win.session)
+    }
+
+    /// The editor can grab focus again well after its window appeared (a remote window finishing its
+    /// connection, say). For a while, put the terminal back in front whenever another app takes it,
+    /// unless you clicked or typed since: then that app is your choice.
+    private static func keepInFront(session: String, for duration: TimeInterval = 20) async {
+        // Called right after focusing the terminal, so the frontmost app is the terminal.
+        guard let terminal = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+        let start = Date()
+        while Date().timeIntervalSince(start) < duration {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            if userActed(since: start) { return }
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier != terminal {
+                hlog("jump: \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?") took focus, back to the terminal")
+                if await !Platform.terminal.focus(session: session) { return }
+            }
+        }
+    }
+
+    private static func userActed(since t: Date) -> Bool {
+        let elapsed = Date().timeIntervalSince(t)
+        let kinds: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]
+        return kinds.contains { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) < elapsed }
     }
 }
 
