@@ -73,9 +73,7 @@ enum Jumper {
         guard !open, let wid = await p.terminal.currentWindow(), let sid = await p.terminal.frontSession() else { return }
         let tiles = p.workspace.tiles()
         await p.terminal.place(window: wid, frame: tiles.terminal)
-        await p.editor.open(item, frame: tiles.editor)
-        _ = await p.terminal.focus(session: sid.id)
-        await keepInFront(session: sid.id)
+        await openEditor(item, frame: tiles.editor, terminalSession: sid.id)
     }
 
     private static func ssh(_ host: String, _ cmd: String) async {
@@ -138,10 +136,17 @@ enum Jumper {
 
         let tiles = p.workspace.tiles()
         await p.terminal.place(window: win.window, frame: tiles.terminal)
-        await p.editor.open(item, frame: tiles.editor)
-        // Bring the terminal back in front: that's where Claude is waiting.
-        _ = await p.terminal.focus(session: win.session)
-        await keepInFront(session: win.session)
+        await openEditor(item, frame: tiles.editor, terminalSession: win.session)
+    }
+
+    /// Open the editor beside the terminal without waiting for it: the editor's window can take
+    /// seconds to show up (a remote one connecting), or never come at all, and you'd sit in front of
+    /// another editor window meanwhile. It is placed in the background when it shows up; the
+    /// terminal goes back in front at once, since that's where Claude is waiting.
+    private static func openEditor(_ item: SessionItem, frame: CGRect, terminalSession: String) async {
+        Task { @MainActor in await Platform.editor.open(item, frame: frame) }
+        _ = await Platform.terminal.focus(session: terminalSession)
+        await keepInFront(session: terminalSession)
     }
 
     /// The editor can grab focus again well after its window appeared (a remote window finishing its
