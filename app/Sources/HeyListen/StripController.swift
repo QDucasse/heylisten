@@ -61,6 +61,7 @@ final class StripController: ObservableObject {
 
     private init() {
         hoverPanel.ignoresMouseEvents = true
+        hoverPanel.animationBehavior = .none   // no fade/zoom when it shows: just appear
         if let s = UserDefaults.standard.string(forKey: "stripAnchor") {
             anchor = NSPointFromString(s)
         } else {
@@ -128,7 +129,7 @@ final class StripController: ObservableObject {
     func dragChanged(_ v: DragGesture.Value) {
         if dragMode == .none {
             suppressClicks = true
-            hover(nil, frameInPanel: .zero)
+            hideHover()
             if let id = itemFrames.first(where: { $0.value.contains(v.startLocation) })?.key, beginReorder(id) {
                 dragMode = .reorder
             } else {
@@ -219,11 +220,39 @@ final class StripController: ObservableObject {
 
     // MARK: hover card
 
-    func hover(_ item: SessionItem?, frameInPanel: CGRect) {
-        guard let item, dragMode == .none else {
-            hoverPanel.orderOut(nil)
-            return
+    /// How long the pointer has to rest on an avatar before its card shows, so sweeping across the
+    /// strip doesn't flash a card for every avatar it passes.
+    static let hoverDelay: TimeInterval = 0.2
+    private var hoveredID: String?
+    private var hoverTask: Task<Void, Never>?
+
+    /// The pointer entered an avatar: hide any card, show this one if the pointer stays.
+    func hoverBegan(_ item: SessionItem, frameInPanel: CGRect) {
+        hideHover()
+        hoveredID = item.id
+        guard dragMode == .none else { return }
+        hoverTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.hoverDelay * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.hoveredID == item.id, self.dragMode == .none else { return }
+            self.showHover(item, frameInPanel: frameInPanel)
         }
+    }
+
+    /// The pointer left an avatar. Ignored if it already entered another one (enter and exit events
+    /// of neighbours can arrive in either order).
+    func hoverEnded(_ id: String) {
+        guard hoveredID == id else { return }
+        hideHover()
+    }
+
+    private func hideHover() {
+        hoveredID = nil
+        hoverTask?.cancel()
+        hoverTask = nil
+        hoverPanel.orderOut(nil)
+    }
+
+    private func showHover(_ item: SessionItem, frameInPanel: CGRect) {
         let card = NSHostingView(rootView: HoverCard(item: item))
         card.layoutSubtreeIfNeeded()
         let size = card.fittingSize

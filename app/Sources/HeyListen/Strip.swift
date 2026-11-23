@@ -218,7 +218,7 @@ struct ItemView: View {
                 .onDisappear { controller.itemFrames[item.id] = nil }
         })
         .onHover { inside in
-            controller.hover(inside ? item : nil, frameInPanel: frame)
+            if inside { controller.hoverBegan(item, frameInPanel: frame) } else { controller.hoverEnded(item.id) }
         }
         .offset(x: vertical ? 0 : o, y: vertical ? o : 0)
         .zIndex(dragging ? 1 : 0)
