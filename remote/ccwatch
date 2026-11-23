@@ -25,6 +25,9 @@ SESSIONS_DIR = os.path.join(HOME, ".claude", "sessions")
 MARKER_DIR = os.environ.get("HEYLISTEN_DIR", os.path.join(HOME, ".claude", "heylisten"))
 INTERVAL = 1.0
 HEARTBEAT = 15.0
+# tmux clients/sessions are polled less often than the session files: two subprocesses each time,
+# and an attach or detach showing up a couple of seconds late is harmless.
+TMUX_INTERVAL = 3.0
 # Defaults; any of these keys in ~/.config/heylisten/config.json ($XDG_CONFIG_HOME) wins.
 SETTINGS = {
     "contextWindow": 1_000_000,   # tokens
@@ -86,22 +89,32 @@ def pid_alive(pid):
         return False
 
 
+_TTYS = {}   # pid -> tty (or None): a process keeps its terminal, so ask ps once per pid
+
+
 def ttys_for(pids):
-    if not pids:
-        return {}
-    try:
-        out = subprocess.run(
-            ["ps", "-o", "pid=,tty=", "-p", ",".join(str(p) for p in pids)],
-            capture_output=True, text=True, timeout=3,
-        ).stdout
-    except Exception:
-        return {}
-    res = {}
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[1] not in ("?", "??", "-"):
-            res[int(parts[0])] = "/dev/" + parts[1]
-    return res
+    """Controlling tty of each pid. Runs ps only for pids not seen before; forgets pids that are gone
+    (so a reused pid is asked about again)."""
+    for p in [p for p in _TTYS if p not in pids]:
+        del _TTYS[p]
+    new = [p for p in pids if p not in _TTYS]
+    if new:
+        try:
+            out = subprocess.run(
+                ["ps", "-o", "pid=,tty=", "-p", ",".join(str(p) for p in new)],
+                capture_output=True, text=True, timeout=3,
+            ).stdout
+        except Exception:
+            out = None
+        if out is not None:   # on failure, cache nothing: try again next time
+            found = {}
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[1] not in ("?", "??", "-"):
+                    found[int(parts[0])] = "/dev/" + parts[1]
+            for p in new:
+                _TTYS[p] = found.get(p)
+    return {p: _TTYS[p] for p in pids if _TTYS.get(p)}
 
 
 def tmux_lines(*args):
@@ -141,9 +154,11 @@ def parse_tmux_field(v):
     return {"session": sess, "window": win, "pane": pane}
 
 
-def snapshot():
+def snapshot(now=None, tmux=None):
+    """Every live session's state. `now` and `tmux` (a tmux_state() result) can be passed in: the
+    stream loop polls tmux on its own, slower schedule, and tests pin the clock."""
     sessions = []
-    now = time.time()
+    now = time.time() if now is None else now
     cfg = settings()
     try:
         markers = os.listdir(MARKER_DIR)
@@ -222,7 +237,7 @@ def snapshot():
     ttys = ttys_for([s["pid"] for s in sessions])
     for s in sessions:
         s["tty"] = ttys.get(s["pid"])
-    return {"type": "snapshot", "sessions": sessions, "tmux": tmux_state()}
+    return {"type": "snapshot", "sessions": sessions, "tmux": tmux_state() if tmux is None else tmux}
 
 
 def emit(obj):
@@ -243,9 +258,12 @@ def main():
     emit(hello)
     last = None
     last_emit = 0.0
+    tmux, tmux_at = None, 0.0
     while True:
-        snap = snapshot()
         now = time.time()
+        if tmux is None or now - tmux_at >= TMUX_INTERVAL:
+            tmux, tmux_at = tmux_state(), now
+        snap = snapshot(now, tmux)
         if snap != last:
             emit(snap)
             last = snap
