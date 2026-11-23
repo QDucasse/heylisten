@@ -140,14 +140,24 @@ struct Rotated90: Layout {
     }
 }
 
-/// Orientation toggle + names toggle (the whole widget is draggable, so no grip).
+/// Orientation, names and lock toggles, plus a drag grip beside them (below the row in vertical
+/// mode, right of the column in horizontal mode). The whole widget drags; the grip just shows where
+/// to grab, and is hidden while locked since the widget can't move then.
 struct TopBar: View {
     @ObservedObject var prefs: Prefs
     let vertical: Bool   // widget orientation: bar is a row on top (vertical) or a column on the left
 
     var body: some View {
+        let outer = vertical ? AnyLayout(VStackLayout(spacing: 1)) : AnyLayout(HStackLayout(spacing: 1))
+        outer {
+            buttons
+            if !prefs.stripPinned { DragGrip(vertical: vertical) }
+        }
+    }
+
+    private var buttons: some View {
         let layout = vertical ? AnyLayout(HStackLayout(spacing: 2)) : AnyLayout(VStackLayout(spacing: 2))
-        layout {
+        return layout {
             BarButton(symbol: prefs.stripVertical ? "arrow.left.and.right" : "arrow.up.and.down",
                       help: prefs.stripVertical ? "Lay out horizontally" : "Lay out vertically",
                       active: false) { prefs.stripVertical.toggle() }
@@ -157,6 +167,27 @@ struct TopBar: View {
                       help: prefs.stripPinned ? "Unlock (float freely)" : "Lock to the top-right corner",
                       active: prefs.stripPinned) { prefs.stripPinned.toggle() }
         }
+    }
+}
+
+/// A short capsule that reads as a handle; its hit area is padded out and shows an open hand.
+struct DragGrip: View {
+    let vertical: Bool   // widget orientation: grip runs horizontally under a row of buttons, or vertically beside a column
+    @State private var hovering = false
+
+    var body: some View {
+        Capsule()
+            .fill(Color.primary.opacity(hovering ? 0.4 : 0.22))
+            .frame(width: vertical ? 28 : 3, height: vertical ? 3 : 28)
+            .padding(vertical ? .vertical : .horizontal, 3)
+            .frame(maxWidth: vertical ? .infinity : nil, maxHeight: vertical ? nil : .infinity)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                hovering = inside
+                if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+            }
+            .onDisappear { if hovering { NSCursor.pop() } }
+            .help("Drag to move")
     }
 }
 
