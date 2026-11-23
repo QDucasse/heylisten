@@ -8,3 +8,4 @@ art/out_icon/
 # kept local, not versioned
 HEYLISTEN.md
 art/README.md
+__pycache__/

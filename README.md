@@ -14,3 +14,5 @@ Then add remote hosts from the menu bar icon: **Hosts → Edit remote hosts…**
 
 To use another terminal or editor, change the thresholds, or write a frontend for another OS,
 see [docs/actions.md](docs/actions.md).
+
+Tests for the watcher's state logic: `python3 -m unittest discover -s remote`.
