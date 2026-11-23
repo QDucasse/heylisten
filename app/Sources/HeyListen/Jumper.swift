@@ -194,6 +194,9 @@ enum VSCode {
         let (code, out) = await runProcess(cli, ["--status"], timeout: 20)
         guard code == 0 else { return nil }
         let wantSSH = item.isLocal ? nil : "[SSH: \(item.host)]"
+        if workspaceFolders(out).contains(where: { $0.remote == wantSSH.map { String($0.dropFirst().dropLast()) } && $0.folder == item.project }) {
+            return true
+        }
         for line in out.split(separator: "\n") {
             guard let r = line.range(of: "window ["), let open = line[r.upperBound...].firstIndex(of: "("),
                   line.hasSuffix(")") else { continue }
@@ -210,6 +213,27 @@ enum VSCode {
             if root == item.project { return true }
         }
         return false
+    }
+
+    /// The folders open in VS Code windows, from the "Workspace Stats" part of `code --status`: the
+    /// local ones first, then a "Remote: SSH: host" block per remote window, each with its
+    /// "Folder (name): N files" line. The process list above it can leave windows out (a remote
+    /// window seen open was missing from it), these blocks don't.
+    static func workspaceFolders(_ status: String) -> [(remote: String?, folder: String)] {
+        var out: [(remote: String?, folder: String)] = []
+        var inStats = false
+        var remote: String?
+        for line in status.split(separator: "\n") {
+            if line.hasPrefix("Workspace Stats:") { inStats = true; remote = nil; continue }
+            if line.hasPrefix("Remote:") {
+                inStats = true
+                remote = line.dropFirst("Remote:".count).trimmingCharacters(in: .whitespaces)
+                continue
+            }
+            guard inStats, let r = line.range(of: "Folder ("), let close = line[r.upperBound...].range(of: "): ") else { continue }
+            out.append((remote, String(line[r.upperBound..<close.lowerBound])))
+        }
+        return out
     }
 
     @MainActor
