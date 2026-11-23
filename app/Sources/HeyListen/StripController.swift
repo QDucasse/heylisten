@@ -34,7 +34,8 @@ final class StripController: ObservableObject {
     static let shared = StripController()
 
     private let panel = FloatingPanel()
-    private let hoverPanel = FloatingPanel()
+    /// Recreated if it ever stops showing on the current Space (see showHover).
+    private var hoverPanel = StripController.makeHoverPanel()
     private var hosting: NSHostingView<AnyView>!
     private var cancellables: Set<AnyCancellable> = []
     private var dragOrigin: NSPoint?
@@ -59,9 +60,14 @@ final class StripController: ObservableObject {
     /// Top-left corner of the widget (Cocoa coordinates), so it grows down/right as content changes.
     private var anchor: NSPoint
 
+    private static func makeHoverPanel() -> FloatingPanel {
+        let p = FloatingPanel()
+        p.ignoresMouseEvents = true
+        p.animationBehavior = .none   // no fade/zoom when it shows: just appear
+        return p
+    }
+
     private init() {
-        hoverPanel.ignoresMouseEvents = true
-        hoverPanel.animationBehavior = .none   // no fade/zoom when it shows: just appear
         if let s = UserDefaults.standard.string(forKey: "stripAnchor") {
             anchor = NSPointFromString(s)
         } else {
@@ -83,6 +89,7 @@ final class StripController: ObservableObject {
             .sink { [weak self] _ in self?.layout() }
             .store(in: &cancellables)
         layout()
+        startHoverTracking()
     }
 
     func layout() {
@@ -223,32 +230,54 @@ final class StripController: ObservableObject {
     /// How long the pointer has to rest on an avatar before its card shows, so sweeping across the
     /// strip doesn't flash a card for every avatar it passes.
     static let hoverDelay: TimeInterval = 0.2
+    /// The avatar under the pointer, and since when.
     private var hoveredID: String?
-    private var hoverTask: Task<Void, Never>?
+    private var hoveredSince = Date.distantPast
+    private var cardShown = false
+    private var hoverTimer: Timer?
 
-    /// The pointer entered an avatar: hide any card, show this one if the pointer stays.
-    func hoverBegan(_ item: SessionItem, frameInPanel: CGRect) {
-        hideHover()
-        hoveredID = item.id
-        guard dragMode == .none else { return }
-        hoverTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.hoverDelay * 1_000_000_000))
-            guard let self, !Task.isCancelled, self.hoveredID == item.id, self.dragMode == .none else { return }
-            self.showHover(item, frameInPanel: frameInPanel)
+    /// Hover is worked out from the pointer position and the avatars' reported frames, polled, not
+    /// from SwiftUI's onHover: after the strip relaid out (a session went away), the avatars that
+    /// were already there got an exit right after every enter, so their card never showed.
+    private func startHoverTracking() {
+        let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.trackHover() }
         }
+        RunLoop.main.add(t, forMode: .common)
+        hoverTimer = t
     }
 
-    /// The pointer left an avatar. Ignored if it already entered another one (enter and exit events
-    /// of neighbours can arrive in either order).
-    func hoverEnded(_ id: String) {
-        guard hoveredID == id else { return }
-        hideHover()
+    private func trackHover() {
+        let m = NSEvent.mouseLocation
+        let pf = panel.frame
+        guard dragMode == .none, panel.isVisible, pf.contains(m) else {
+            if hoveredID != nil { hideHover() }
+            return
+        }
+        // SwiftUI .global frames are top-left based inside the panel.
+        let p = CGPoint(x: m.x - pf.minX, y: pf.maxY - m.y)
+        // Only sessions that still exist: a removed avatar's onDisappear doesn't always fire, so its
+        // last frame can linger in itemFrames and overlap the avatar that slid into its place.
+        let items = Store.shared.itemsByHost().flatMap(\.items)
+        let live = Set(items.map(\.id))
+        itemFrames = itemFrames.filter { live.contains($0.key) }
+        let id = itemFrames.first { $0.value.contains(p) }?.key
+        if id != hoveredID {
+            hideHover()
+            hoveredID = id
+            hoveredSince = Date()
+            return
+        }
+        guard let id, !cardShown, Date().timeIntervalSince(hoveredSince) >= Self.hoverDelay,
+              let frame = itemFrames[id],
+              let item = items.first(where: { $0.id == id }) else { return }
+        showHover(item, frameInPanel: frame)
+        cardShown = true
     }
 
     private func hideHover() {
         hoveredID = nil
-        hoverTask?.cancel()
-        hoverTask = nil
+        cardShown = false
         hoverPanel.orderOut(nil)
     }
 
@@ -277,8 +306,19 @@ final class StripController: ObservableObject {
         }
         x = min(max(x, vf.minX + 4), vf.maxX - size.width - 4)
         y = min(max(y, vf.minY + 4), vf.maxY - size.height - 4)
-        hoverPanel.setFrame(NSRect(x: x.rounded(), y: y.rounded(), width: size.width, height: size.height), display: true)
+        let target = NSRect(x: x.rounded(), y: y.rounded(), width: size.width, height: size.height)
+        hoverPanel.setFrame(target, display: true)
         hoverPanel.orderFrontRegardless()
+        // After a Space is removed, a panel that was ordered out can come back stuck to a Space
+        // other than the one on screen: start over with a fresh panel.
+        if !hoverPanel.isOnActiveSpace {
+            hlog("hover: card panel not on the active Space, recreating it")
+            hoverPanel.orderOut(nil)
+            hoverPanel = Self.makeHoverPanel()
+            hoverPanel.contentView = card
+            hoverPanel.setFrame(target, display: true)
+            hoverPanel.orderFrontRegardless()
+        }
     }
 }
 

@@ -243,29 +243,18 @@ struct ItemView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Measure our frame (behind the button), but take hover on the button itself: a view behind
-        // the button never receives hover events.
-        // Layout frame, measured before the reorder offset so drags compare slots, not positions.
+        // Layout frame, measured before the reorder offset so drags compare slots, not positions. The
+        // controller also works out hover from these frames.
         .background(GeometryReader { geo in
             Color.clear
-                .onAppear { setFrame(geo.frame(in: .global)) }
-                .onChange(of: geo.frame(in: .global)) { _, f in setFrame(f) }
+                .onAppear { controller.itemFrames[item.id] = geo.frame(in: .global) }
+                .onChange(of: geo.frame(in: .global)) { _, f in controller.itemFrames[item.id] = f }
                 .onDisappear { controller.itemFrames[item.id] = nil }
         })
-        .onHover { inside in
-            if inside { controller.hoverBegan(item, frameInPanel: frame) } else { controller.hoverEnded(item.id) }
-        }
         .offset(x: vertical ? 0 : o, y: vertical ? o : 0)
         .zIndex(dragging ? 1 : 0)
         .opacity(dragging ? 0.85 : 1)
     }
-
-    private func setFrame(_ f: CGRect) {
-        frame = f
-        controller.itemFrames[item.id] = f
-    }
-
-    @State private var frame: CGRect = .zero
 
     private var subtitle: String {
         let state: String
