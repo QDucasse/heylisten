@@ -9,6 +9,7 @@ struct StripView: View {
     var body: some View {
         let groups = store.itemsByHost().filter { !$0.items.isEmpty }
         let vertical = prefs.stripVertical
+        let hasLocal = groups.first?.host.isLocal ?? false
         // Toggles sit on top in vertical mode and on the left in horizontal mode.
         outer(vertical) {
             TopBar(prefs: prefs, vertical: vertical)
@@ -30,11 +31,14 @@ struct StripView: View {
             // Separator between the toggles and the avatars, drawn as an edge of the avatar area so it
             // always spans it: a vertical line on its left (horizontal mode), a horizontal line on top
             // (vertical mode).
-            .padding(vertical ? .top : .leading, 5)
+            // Only needed when local avatars come first: a remote host's section brings its own rule.
+            .padding(vertical ? .top : .leading, hasLocal ? 5 : 0)
             .overlay(alignment: vertical ? .top : .leading) {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.18))
-                    .frame(width: vertical ? nil : 1, height: vertical ? 1 : nil)
+                if hasLocal {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.18))
+                        .frame(width: vertical ? nil : 1, height: vertical ? 1 : nil)
+                }
             }
         }
         .padding(StripLayout.padding)
