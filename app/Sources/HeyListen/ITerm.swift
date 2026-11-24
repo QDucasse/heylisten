@@ -43,12 +43,20 @@ func runProcess(_ exe: String, _ args: [String], timeout: TimeInterval = 20, std
         // Drain stdout while the process runs: reading only after exit deadlocks once the output
         // exceeds the pipe buffer (~64 KB), because the child blocks on write and never exits.
         DispatchQueue.global().async {
-            let d = out.fileHandleForReading.readDataToEndOfFile()   // returns at EOF
+            let fh = out.fileHandleForReading
+            let d = fh.readDataToEndOfFile()   // returns at EOF
+            // Close it ourselves: left to dealloc, the read end stayed open (about one fd per call,
+            // and the 3 s front-session poll ran the app out of them in a day, after which every
+            // process launch failed and every jump took the "nothing open, new desktop" path).
+            try? fh.close()
             p.waitUntilExit()
             finish(p.terminationStatus, String(decoding: d, as: UTF8.self))
         }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
             if p.isRunning { p.terminate() }
+            // Something the child left behind (a background process, say) can hold the pipe open
+            // past its exit, and the read above then waits for it. Don't make the caller wait too.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { finish(-1, "") }
         }
     }
 }
@@ -170,7 +178,10 @@ enum ITerm {
           return (unique id of current session of nw) & "|" & (id of nw)
         end tell
         """)
-        guard let r, let bar = r.firstIndex(of: "|") else { return nil }
+        guard let r, let bar = r.firstIndex(of: "|") else {
+            try? FileManager.default.removeItem(atPath: path)   // it deletes itself only once it runs
+            return nil
+        }
         return NewWindow(sessionID: String(r[..<bar]), windowID: String(r[r.index(after: bar)...]))
     }
 

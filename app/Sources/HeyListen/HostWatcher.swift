@@ -98,17 +98,17 @@ final class HostWatcher {
         // on a closed pipe is called again forever (e.g. after reconnect frees this watcher).
         out.fileHandleForReading.readabilityHandler = { [weak self] fh in
             let d = fh.availableData
-            if d.isEmpty { fh.readabilityHandler = nil; return }
-            guard let self else { fh.readabilityHandler = nil; return }
+            if d.isEmpty { Self.done(fh); return }
+            guard let self else { Self.done(fh); return }
             self.queue.async {
-                guard gen == self.generation else { fh.readabilityHandler = nil; return }
+                guard gen == self.generation else { Self.done(fh); return }
                 self.consume(d)
             }
         }
         err.fileHandleForReading.readabilityHandler = { [weak self] fh in
             let d = fh.availableData
-            if d.isEmpty { fh.readabilityHandler = nil; return }
-            guard let self else { fh.readabilityHandler = nil; return }
+            if d.isEmpty { Self.done(fh); return }
+            guard let self else { Self.done(fh); return }
             self.queue.async {
                 let s = String(decoding: d, as: UTF8.self)
                 self.stderrTail = String((self.stderrTail + s).suffix(400))
@@ -139,6 +139,12 @@ final class HostWatcher {
             emit(.disconnected(reason: error.localizedDescription, notInstalled: false))
             scheduleRelaunch(gen: gen, fixed: nil)
         }
+    }
+
+    /// Stop reading a pipe and close it. Left to dealloc, the descriptor can stay open (see runProcess).
+    private static func done(_ fh: FileHandle) {
+        fh.readabilityHandler = nil
+        try? fh.close()
     }
 
     private func startWatchdog(gen: Int) {

@@ -314,6 +314,7 @@ final class StripController: ObservableObject {
         if !hoverPanel.isOnActiveSpace {
             hlog("hover: card panel not on the active Space, recreating it")
             hoverPanel.orderOut(nil)
+            hoverPanel.close()   // not released on close, but leaves AppKit's window list
             hoverPanel = Self.makeHoverPanel()
             hoverPanel.contentView = card
             hoverPanel.setFrame(target, display: true)

@@ -241,8 +241,15 @@ final class Store: ObservableObject {
         return host.tmux?.sessions.contains { $0.name == t.session && $0.pane == t.pane } ?? false
     }
 
+    private var refreshingFront = false
+
+    /// One poll at a time: when iTerm is slow to answer (osascript can wait up to 20 s), polls
+    /// started every 3 s would otherwise pile up.
     private func refreshFront() {
+        guard !refreshingFront else { return }
+        refreshingFront = true
         Task { @MainActor in
+            defer { self.refreshingFront = false }
             guard let f = await Platform.terminal.frontSession() else { return }
             self.front = f
             for item in self.items where item.mood == .reply && self.matchesFront(item, f) {
