@@ -12,10 +12,36 @@ enum Jumper {
         (UserDefaults.standard.dictionary(forKey: tagKey) as? [String: String])?["\(host)|\(tmuxSession)"]
     }
 
+    private static var tags: [String: String] {
+        get { (UserDefaults.standard.dictionary(forKey: tagKey) as? [String: String]) ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: tagKey) }
+    }
+
+    /// A window shows one tmux session at a time, so an older link to the same window is stale.
     private static func tag(host: String, tmuxSession: String, id: String) {
-        var d = (UserDefaults.standard.dictionary(forKey: tagKey) as? [String: String]) ?? [:]
+        var d = tags.filter { $0.value != id }
         d["\(host)|\(tmuxSession)"] = id
-        UserDefaults.standard.set(d, forKey: tagKey)
+        tags = d
+    }
+
+    private static func untag(host: String, tmuxSession: String) {
+        tags["\(host)|\(tmuxSession)"] = nil
+    }
+
+    /// Drop a host's links to tmux sessions it no longer has. Session names are reused (numbers,
+    /// mostly), and a leftover link would send a new session with an old name to whatever window
+    /// the old one was in.
+    static func pruneTags(host: String, sessions: [String]) {
+        let live = Set(sessions)
+        let d = tags
+        let kept = d.filter { key, _ in
+            guard let bar = key.lastIndex(of: "|"), key[..<bar] == host else { return true }
+            return live.contains(String(key[key.index(after: bar)...]))
+        }
+        if kept.count != d.count {
+            hlog("jump: dropped links to gone tmux sessions on \(host): \(d.keys.filter { kept[$0] == nil }.sorted())")
+            tags = kept
+        }
     }
 
     static func jump(_ item: SessionItem) {
@@ -45,11 +71,13 @@ enum Jumper {
             let attached = host?.tmux?.sessions.first { $0.name == t.session }?.attached ?? 0
             if attached > 0 {
                 // 1. A window we know about (opened by us, or found earlier).
-                if let id = taggedSession(host: item.host, tmuxSession: t.session),
-                   await Platform.terminal.focus(session: id) {
-                    await selectPane(item, t)
-                    await ensureEditor(item)
-                    return
+                if let id = taggedSession(host: item.host, tmuxSession: t.session) {
+                    if await Platform.terminal.focus(session: id) {
+                        await selectPane(item, t)
+                        await ensureEditor(item)
+                        return
+                    }
+                    untag(host: item.host, tmuxSession: t.session)   // that window is gone
                 }
                 // 2. Discover a window the user attached themselves, then remember it.
                 if let id = await discoverRemoteWindow(item, t) {

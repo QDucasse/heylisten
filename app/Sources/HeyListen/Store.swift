@@ -126,6 +126,7 @@ final class Store: ObservableObject {
                 if !hosts[i].status.isUsable { hosts[i].status = .online }
                 hosts[i].sessions = m.sessions ?? []
                 hosts[i].tmux = m.tmux
+                if let t = m.tmux, t.available { Jumper.pruneTags(host: host, sessions: t.sessions.map(\.name)) }
                 updateTints()
                 let seed = !hosts[i].seededNotifications
                 hosts[i].seededNotifications = true
